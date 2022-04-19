@@ -6,25 +6,21 @@ and native sampling rate time series formats of the MTU-5C family.
 
 __author__ = 'Jorge Torres-Solis'
 
+# =============================================================================
+# Imports
+# =============================================================================
+
+from pathlib import Path
 from numpy import empty, fromfile, float32, append
 from struct import unpack_from, unpack
-import os
 import string
-from cmath import phase
 from PhoenixGeoPy.Reader.DataScaling import DataScaling
-
+# =============================================================================
 
 class _TSReaderBase(object):
     def __init__(self, path, num_files=1, header_size=128, report_hw_sat=False):
+        self._seq = None
         self.base_path = path
-        self.base_dir, self.file_name = os.path.split(self.base_path)
-        file_name_base, self.file_extension = self.file_name.split(".", 2)
-        file_parts = file_name_base.split("_")
-        self.inst_id = file_parts[0]
-        self.rec_id = file_parts[1]
-        self.ch_id = file_parts[2]
-        seq_str = file_parts[3]
-        self.seq = int(seq_str, base=16)
         self.last_seq = self.seq + num_files
         self.stream = None
         self.report_hw_sat = report_hw_sat
@@ -41,7 +37,49 @@ class _TSReaderBase(object):
         self.lpf_Hz = None                   # Nominal cutoff freq of the configured LPF of the channel
         self.preamp_gain = 1.0
         self.attenuator_gain = 1.0
+        
+    @property
+    def base_path(self):
+        return self._base_path
+    @base_path.setter
+    def base_path(self, value):
+        self._base_path = Path(value)
+        
+    @property
+    def base_dir(self):
+        return self.base_path.parent
+    
+    @property
+    def file_name(self):
+        return self.base_path.name
 
+    @property
+    def file_extension(self):
+        return self.base_path.suffix
+    
+    @property
+    def inst_id(self):
+        return self.base_path.stem.split("_")[0]
+    
+    @property
+    def rec_id(self):
+        return self.base_path.stem.split("_")[1]
+    
+    @property
+    def ch_id(self):
+        return self.base_path.stem.split("_")[2]
+        
+    @property
+    def seq(self):
+        if self._seq is None:
+            return int(self.base_path.stem.split("_")[3], 16)
+        return self._seq
+    
+    @seq.setter
+    def seq(self, value):
+        print(value, type(value))
+        self._seq = int(value)
+    
     def open_next(self):
         ret_val = False
         if self.stream is not None:
@@ -49,10 +87,11 @@ class _TSReaderBase(object):
         self.seq += 1
         if self.seq < self.last_seq:
             new_seq_str = "%08X" % (self.seq)
-            new_path = (self.base_dir + '/' + self.inst_id + '_' +
-                        self.rec_id + '_' + self.ch_id + '_' +
-                        new_seq_str + '.' + self.file_extension)
-            if os.path.exists(new_path):
+            new_path = self.base_dir.joinpath(
+                f"{self.inst_id}_{self.rec_id}_{self.ch_id}_{new_seq_str}.{self.file_extension}"
+                )
+
+            if new_path.exists():
                 self.stream = open(new_path, 'rb')
                 if self.header_size > 0:
                     self.dataHeader = self.stream.read(self.header_size)
@@ -66,10 +105,10 @@ class _TSReaderBase(object):
             self.stream.close()
         self.seq = file_seq_num
         new_seq_str = "%08X" % (self.seq)
-        new_path = (self.base_dir + '/' + self.inst_id + '_' +
-                    self.rec_id + '_' + self.ch_id + '_' +
-                    new_seq_str + '.' + self.file_extension)
-        if os.path.exists(new_path):
+        new_path = self.base_dir.joinpath(
+            f"{self.inst_id}_{self.rec_id}_{self.ch_id}_{new_seq_str}.{self.file_extension}"
+            )
+        if new_path.exists():
             print (" opening " + new_path)
             self.stream = open(new_path, 'rb')
             if self.header_size > 0:
@@ -268,7 +307,8 @@ class NativeReader(_TSReaderBase):
                  header_size=128, last_frame=0, channel_gain=0.5, ad_plus_minus_range = 5.0,
                  channel_type="E", report_hw_sat=False):
         # Init the base class
-        _TSReaderBase.__init__(self, path, num_files, header_size, report_hw_sat)
+        super().__init__(path, num_files, header_size, report_hw_sat)
+        #_TSReaderBase.__init__(self, path, num_files, header_size, report_hw_sat)
 
         # Track the last frame seen by the streamer, to report missing frames
         self.last_frame = last_frame
@@ -297,8 +337,8 @@ class NativeReader(_TSReaderBase):
         self.footer_idx_samp_mask = int('0x0fffffff', 16)
         self.footer_sat_mask = int('0x70000000', 16)
 
-    def unpack_header(self):
-        super(NativeReader, self).unpack_header()
+    # def unpack_header(self):
+    #     super(NativeReader, self).unpack_header()
         # TODO: Implement any specific header unpacking for this particular class below
 
     def read_frames(self, num_frames):
@@ -327,6 +367,51 @@ class NativeReader(_TSReaderBase):
             self.last_frame = frameCount
 
             for ptrSamp in range(0, 60, 3):
+                # unpack expectes 4 bytes, but the frames are only 3?
+                value = unpack(">i", dataFrame[ptrSamp:ptrSamp + 3] + b'\x00')[0]
+                _data_buf[_idx_buf] = value * self._scale_factor
+                _idx_buf += 1
+
+            frames_in_buf += 1
+
+            if self.report_hw_sat:
+                satCount = (dataFooter[0] & self.footer_sat_mask) >> 24
+                if satCount:
+                    print ("Ch [%s] Frame %d has %d saturations" %
+                           (self.ch_id, frameCount, satCount))
+
+        return _data_buf
+    
+    @property
+    def npts_per_frame(self):
+        return int((self.frameSize - 4) / 3)
+    
+    def read(self):
+        frames_in_buf = 0
+        _idx_buf = 0
+        _data_buf = empty([self.npts_per_frame])  # 20 samples packed in a frame
+        eof = False
+        while not eof:
+
+            dataFrame = self.stream.read(self.frameSize)
+            if not dataFrame:
+                if not self.open_next():
+                    return empty([0])
+                dataFrame = self.stream.read(self.frameSize)
+                if not dataFrame:
+                    return empty([0])
+
+            dataFooter = unpack_from("I", dataFrame, self.frameSize - 4)
+
+            # Check that there are no skipped frames
+            frameCount = dataFooter[0] & self.footer_idx_samp_mask
+            difCount = frameCount - self.last_frame
+            if (difCount != 1):
+                print ("Ch [%s] Missing frames at %d [%d]\n" %
+                       (self.ch_id, frameCount, difCount))
+            self.last_frame = frameCount
+
+            for ptrSamp in range(0, 60, 3):
                 tmpSampleTupple = unpack(">i", dataFrame[ptrSamp:ptrSamp + 3] + b'\x00')
                 _data_buf[_idx_buf] = tmpSampleTupple[0] * self._scale_factor
                 _idx_buf += 1
@@ -340,6 +425,7 @@ class NativeReader(_TSReaderBase):
                            (self.ch_id, frameCount, satCount))
 
         return _data_buf
+
 
     def skip_frames(self, num_frames):
         bytes_to_skip = int(num_frames * 64)
