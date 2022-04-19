@@ -16,6 +16,25 @@ from struct import unpack_from, unpack
 import string
 from PhoenixGeoPy.Reader.DataScaling import DataScaling
 # =============================================================================
+class Header:
+    def __init__(self, **kwargs):
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+            
+    def __str__(self):
+        lines = []
+        for key in sorted(self.__dict__.keys()):
+            lines.append(f"{key}: {getattr(self, key)}")
+            
+        return "\n".join(lines)
+    
+    def __repr__(self):
+        return self.__str__()
+    
+    def update(self, **kwargs):
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+
 
 class _TSReaderBase(object):
     def __init__(self, path, num_files=1, header_size=128, report_hw_sat=False):
@@ -24,7 +43,7 @@ class _TSReaderBase(object):
         self.last_seq = self.seq + num_files
         self.stream = None
         self.report_hw_sat = report_hw_sat
-        self.header_info = {}
+        self.header = Header()
         self.header_size = header_size
         self.dataHeader = None
         self.open_file_seq(self.seq)   # Open the file passed as the fisrt file in the sequence to stream
@@ -77,7 +96,6 @@ class _TSReaderBase(object):
     
     @seq.setter
     def seq(self, value):
-        print(value, type(value))
         self._seq = int(value)
     
     def open_next(self):
@@ -88,7 +106,7 @@ class _TSReaderBase(object):
         if self.seq < self.last_seq:
             new_seq_str = "%08X" % (self.seq)
             new_path = self.base_dir.joinpath(
-                f"{self.inst_id}_{self.rec_id}_{self.ch_id}_{new_seq_str}.{self.file_extension}"
+                f"{self.inst_id}_{self.rec_id}_{self.ch_id}_{new_seq_str}{self.file_extension}"
                 )
 
             if new_path.exists():
@@ -106,10 +124,10 @@ class _TSReaderBase(object):
         self.seq = file_seq_num
         new_seq_str = "%08X" % (self.seq)
         new_path = self.base_dir.joinpath(
-            f"{self.inst_id}_{self.rec_id}_{self.ch_id}_{new_seq_str}.{self.file_extension}"
+            f"{self.inst_id}_{self.rec_id}_{self.ch_id}_{new_seq_str}{self.file_extension}"
             )
         if new_path.exists():
-            print (" opening " + new_path)
+            print (f"--> opening {new_path}")
             self.stream = open(new_path, 'rb')
             if self.header_size > 0:
                 self.dataHeader = self.stream.read(self.header_size)
@@ -164,7 +182,7 @@ class _TSReaderBase(object):
                 else:
                     self.preamp_gain = 8.0
                     # Acount for experimental prototype BCM05-A
-                    if self.header_info['ch_hwv'][0:7] == "BCM05-A":
+                    if self.header.ch_hwv[0:7] == "BCM05-A":
                         self.preamp_gain = 4.0
     
     def __populate_main_gain(self, config_fp):
@@ -173,7 +191,7 @@ class _TSReaderBase(object):
         if self.board_model_main == "BCM01" or self.board_model_main == "BCM03":
             # Original style 24 KSps boards and original 96 KSps boards
             new_gains = False
-        if self.header_info['ch_hwv'][0:7] == "BCM05-A":
+        if self.header.ch_hwv[0:7] == "BCM05-A":
             # Acount for experimental prototype BCM05-A, which also had original gain banks
             new_gains = False
         if config_fp[0] & 0x0C == 0x00:
@@ -218,7 +236,7 @@ class _TSReaderBase(object):
             if self.board_model_main == "BCM01" or self.board_model_main == "BCM03":
                 # Original style 24 KSps boards and original 96 KSps boards
                 new_attenuator = False
-            if self.header_info['ch_hwv'][0:7] == "BCM05-A":
+            if self.header.cs_hwv[0:7] == "BCM05-A":
                 # Acount for experimental prototype BCM05-A, which also had original gain banks
                 new_attenuator = False
 
@@ -228,27 +246,36 @@ class _TSReaderBase(object):
                 self.attenuator_gain = 0.1
 
     def unpack_header(self):
-        self.header_info['file_type'] = unpack_from('B', self.dataHeader, 0)[0]
-        self.header_info['file_version'] = unpack_from('B', self.dataHeader, 1)[0]
-        self.header_info['length'] = unpack_from('H', self.dataHeader, 2)[0]
-        self.header_info['inst_type'] = unpack_from('8s', self.dataHeader, 4)[0].decode("utf-8").strip(' ').strip('\x00')
-        self.header_info['inst_serial'] = b''.join(unpack_from('cccccccc', self.dataHeader, 12)).strip(b'\x00')
-        self.header_info['rec_id'] = unpack_from('I', self.dataHeader, 20)[0]
-        self.header_info['ch_id'] = unpack_from('B', self.dataHeader, 24)[0]
-        self.header_info['file_sequence'] = unpack_from('I', self.dataHeader, 25)[0]
-        self.header_info['frag_period'] = unpack_from('H', self.dataHeader, 29)[0]
-        self.header_info['ch_hwv'] = unpack_from('8s', self.dataHeader, 31)[0].decode("utf-8").strip(' ')
-        self.board_model_main = self.header_info['ch_hwv'][0:5]
-        self.board_model_revision = self.header_info['ch_hwv'][6:1]
-        self.header_info['ch_ser'] = unpack_from('8s', self.dataHeader, 39)[0].decode("utf-8").strip('\x00')
+        if self.stream is None:
+            self.stream = open(self.base_path, 'rb')
+            if self.header_size > 0:
+                self.dataHeader = self.stream.read(self.header_size)
+                
+        
+        header_info = {}      
+        header_info['file_type'] = unpack_from('B', self.dataHeader, 0)[0]
+        header_info['file_version'] = unpack_from('B', self.dataHeader, 1)[0]
+        header_info['length'] = unpack_from('H', self.dataHeader, 2)[0]
+        header_info['inst_type'] = unpack_from('8s', self.dataHeader, 4)[0].decode("utf-8").strip(' ').strip('\x00')
+        header_info['inst_serial'] = b''.join(unpack_from('cccccccc', self.dataHeader, 12)).strip(b'\x00')
+        header_info['rec_id'] = unpack_from('I', self.dataHeader, 20)[0]
+        header_info['ch_id'] = unpack_from('B', self.dataHeader, 24)[0]
+        header_info['file_sequence'] = unpack_from('I', self.dataHeader, 25)[0]
+        header_info['frag_period'] = unpack_from('H', self.dataHeader, 29)[0]
+        header_info['ch_hwv'] = unpack_from('8s', self.dataHeader, 31)[0].decode("utf-8").strip(' ')
+        self.board_model_main = header_info['ch_hwv'][0:5]
+        self.board_model_revision = header_info['ch_hwv'][6:1]
+        header_info['ch_ser'] = unpack_from('8s', self.dataHeader, 39)[0].decode("utf-8").strip('\x00')
         # handle the case of backend < v0.14, which puts '--------' in ch_ser
-        if all(chars in string.hexdigits for chars in self.header_info['ch_ser']):
-            self.header_info['ch_ser'] = int(self.header_info['ch_ser'], 16)
+        if all(chars in string.hexdigits for chars in header_info['ch_ser']):
+            header_info['ch_ser'] = int(header_info['ch_ser'], 16)
         else:
-            self.header_info['ch_ser'] = 0
-        self.header_info['ch_fir'] = hex(unpack_from('I', self.dataHeader, 47)[0])
+            header_info['ch_ser'] = 0
+        header_info['ch_fir'] = hex(unpack_from('I', self.dataHeader, 47)[0])
         config_fp = unpack_from('BBBBBBBB', self.dataHeader, 51)
-        self.header_info['conf_fp'] = config_fp
+        header_info['conf_fp'] = config_fp
+        self.header.update(**header_info)
+        
         # Channel type
         self.__populate_channel_type(config_fp)
         # Electric channel Preamp
@@ -265,36 +292,39 @@ class _TSReaderBase(object):
         self.total_selectable_gain = self.channel_main_gain * self.preamp_gain * self.attenuator_gain
         self.total_circuitry_gain = self.total_selectable_gain * self.intrinsic_circuitry_gain
 
-        self.header_info['sample_rate_base'] = unpack_from('H', self.dataHeader, 59)[0]
-        self.header_info['sample_rate_exp'] = unpack_from('b', self.dataHeader, 61)[0]
-        self.header_info['sample_rate'] = self.header_info['sample_rate_base']
-        if self.header_info['sample_rate_exp'] != 0:
-            self.header_info['sample_rate'] *= pow(10, self.header_info['sample_rate_exp'])
-        self.header_info['bytes_per_sample'] = unpack_from('B', self.dataHeader, 62)[0]
-        self.header_info['frame_size'] = unpack_from('I', self.dataHeader, 63)[0]
-        self.dataFooter = self.header_info['frame_size'] >> 24
-        self.frameSize = self.header_info['frame_size'] & 0x0ffffff
-        self.header_info['decimation_node_id'] = unpack_from('H', self.dataHeader, 67)[0]
-        self.header_info['frame_rollover_count'] = unpack_from('H', self.dataHeader, 69)[0]
-        self.header_info['gps_long'] = unpack_from('f', self.dataHeader, 71)[0]
-        self.header_info['gps_lat'] = unpack_from('f', self.dataHeader, 75)[0]
-        self.header_info['gps_height'] = unpack_from('f', self.dataHeader, 79)[0]
-        self.header_info['gps_hacc'] = unpack_from('I', self.dataHeader, 83)[0]
-        self.header_info['gps_vacc'] = unpack_from('I', self.dataHeader, 87)[0]
-        self.header_info['timing_status'] = unpack_from('BBH', self.dataHeader, 91)
-        self.header_info['timing_flags'] = self.header_info['timing_status'][0]
-        self.header_info['timing_sat_count'] = self.header_info['timing_status'][1]
-        self.header_info['timing_stability'] = self.header_info['timing_status'][2]
-        self.header_info['future1'] = unpack_from('b', self.dataHeader, 95)[0]
-        self.header_info['future2'] = unpack_from('i', self.dataHeader, 97)[0]
-        self.header_info['saturated_frames'] = unpack_from('H', self.dataHeader, 101)[0]
-        if self.header_info['saturated_frames'] & 0x80 == 0x80:
-            self.header_info['saturated_frames'] &= 0x7F
-            self.header_info['saturated_frames'] <<= 4
-        self.header_info['missing_frames'] = unpack_from('H', self.dataHeader, 103)[0]
-        self.header_info['battery_voltage_mV'] = unpack_from('H', self.dataHeader, 105)[0]
-        self.header_info['min_signal'] = unpack_from('f', self.dataHeader, 107)[0]
-        self.header_info['max_signal'] = unpack_from('f', self.dataHeader, 111)[0]
+        header_info = {}
+        header_info['sample_rate_base'] = unpack_from('H', self.dataHeader, 59)[0]
+        header_info['sample_rate_exp'] = unpack_from('b', self.dataHeader, 61)[0]
+        header_info['sample_rate'] = header_info['sample_rate_base']
+        if header_info['sample_rate_exp'] != 0:
+            header_info['sample_rate'] *= pow(10, header_info['sample_rate_exp'])
+        header_info['bytes_per_sample'] = unpack_from('B', self.dataHeader, 62)[0]
+        header_info['frame_size'] = unpack_from('I', self.dataHeader, 63)[0]
+        self.dataFooter = header_info['frame_size'] >> 24
+        self.frameSize = header_info['frame_size'] & 0x0ffffff
+        header_info['decimation_node_id'] = unpack_from('H', self.dataHeader, 67)[0]
+        header_info['frame_rollover_count'] = unpack_from('H', self.dataHeader, 69)[0]
+        header_info['gps_long'] = unpack_from('f', self.dataHeader, 71)[0]
+        header_info['gps_lat'] = unpack_from('f', self.dataHeader, 75)[0]
+        header_info['gps_height'] = unpack_from('f', self.dataHeader, 79)[0]
+        header_info['gps_hacc'] = unpack_from('I', self.dataHeader, 83)[0]
+        header_info['gps_vacc'] = unpack_from('I', self.dataHeader, 87)[0]
+        header_info['timing_status'] = unpack_from('BBH', self.dataHeader, 91)
+        header_info['timing_flags'] = header_info['timing_status'][0]
+        header_info['timing_sat_count'] = header_info['timing_status'][1]
+        header_info['timing_stability'] = header_info['timing_status'][2]
+        header_info['future1'] = unpack_from('b', self.dataHeader, 95)[0]
+        header_info['future2'] = unpack_from('i', self.dataHeader, 97)[0]
+        header_info['saturated_frames'] = unpack_from('H', self.dataHeader, 101)[0]
+        if header_info['saturated_frames'] & 0x80 == 0x80:
+            header_info['saturated_frames'] &= 0x7F
+            header_info['saturated_frames'] <<= 4
+        header_info['missing_frames'] = unpack_from('H', self.dataHeader, 103)[0]
+        header_info['battery_voltage_mV'] = unpack_from('H', self.dataHeader, 105)[0]
+        header_info['min_signal'] = unpack_from('f', self.dataHeader, 107)[0]
+        header_info['max_signal'] = unpack_from('f', self.dataHeader, 111)[0]
+        
+        self.header.update(**header_info)
 
     def close(self):
         if self.stream is not None:
@@ -336,10 +366,6 @@ class NativeReader(_TSReaderBase):
         # optimization variables
         self.footer_idx_samp_mask = int('0x0fffffff', 16)
         self.footer_sat_mask = int('0x70000000', 16)
-
-    # def unpack_header(self):
-    #     super(NativeReader, self).unpack_header()
-        # TODO: Implement any specific header unpacking for this particular class below
 
     def read_frames(self, num_frames):
         frames_in_buf = 0
@@ -402,6 +428,7 @@ class NativeReader(_TSReaderBase):
                     return empty([0])
 
             dataFooter = unpack_from("I", dataFrame, self.frameSize - 4)
+            print("data footer ", dataFooter)
 
             # Check that there are no skipped frames
             frameCount = dataFooter[0] & self.footer_idx_samp_mask
