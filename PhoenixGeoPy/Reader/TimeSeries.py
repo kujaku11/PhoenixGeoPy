@@ -11,7 +11,7 @@ __author__ = 'Jorge Torres-Solis'
 # =============================================================================
 
 from pathlib import Path
-from numpy import empty, fromfile, float32, append
+from numpy import empty, fromfile, float32, append, zeros
 from struct import unpack_from, unpack
 import string
 from PhoenixGeoPy.Reader.DataScaling import DataScaling
@@ -97,6 +97,14 @@ class _TSReaderBase(object):
     @seq.setter
     def seq(self, value):
         self._seq = int(value)
+        
+    @property
+    def file_size(self):
+        return self.base_path.stat().st_size
+    
+    @property
+    def max_samples(self):
+        return int((self.file_size - self.header_size * 3) / 3)
     
     def open_next(self):
         ret_val = False
@@ -110,6 +118,7 @@ class _TSReaderBase(object):
                 )
 
             if new_path.exists():
+                print(f"Next file is {new_path}... opening")
                 self.stream = open(new_path, 'rb')
                 if self.header_size > 0:
                     self.dataHeader = self.stream.read(self.header_size)
@@ -414,34 +423,33 @@ class NativeReader(_TSReaderBase):
     
     def read(self):
         frames_in_buf = 0
-        _idx_buf = 0
-        _data_buf = empty([self.npts_per_frame])  # 20 samples packed in a frame
-        eof = False
-        while not eof:
+        index = 0
+        data = zeros(self.max_samples)  # 20 samples packed in a frame
+
+        while index < self.max_samples:
 
             dataFrame = self.stream.read(self.frameSize)
             if not dataFrame:
                 if not self.open_next():
-                    return empty([0])
+                    break
                 dataFrame = self.stream.read(self.frameSize)
                 if not dataFrame:
-                    return empty([0])
+                    break
 
             dataFooter = unpack_from("I", dataFrame, self.frameSize - 4)
-            print("data footer ", dataFooter)
 
             # Check that there are no skipped frames
             frameCount = dataFooter[0] & self.footer_idx_samp_mask
             difCount = frameCount - self.last_frame
             if (difCount != 1):
-                print ("Ch [%s] Missing frames at %d [%d]\n" %
-                       (self.ch_id, frameCount, difCount))
+                print(
+                    f"Ch [{self.ch_id}] is missing frames at {frameCount}, difference of {difCount}, check {index}\n")
             self.last_frame = frameCount
 
             for ptrSamp in range(0, 60, 3):
                 tmpSampleTupple = unpack(">i", dataFrame[ptrSamp:ptrSamp + 3] + b'\x00')
-                _data_buf[_idx_buf] = tmpSampleTupple[0] * self._scale_factor
-                _idx_buf += 1
+                data[index] = tmpSampleTupple[0] * self._scale_factor
+                index += 1
 
             frames_in_buf += 1
 
@@ -451,7 +459,7 @@ class NativeReader(_TSReaderBase):
                     print ("Ch [%s] Frame %d has %d saturations" %
                            (self.ch_id, frameCount, satCount))
 
-        return _data_buf
+        return data[0:index]
 
 
     def skip_frames(self, num_frames):
