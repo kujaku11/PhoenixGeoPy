@@ -439,64 +439,67 @@ class NativeReader(_TSReaderBase):
     
     def read(self):
             
-        # # first read in whole file
-        # self.stream.seek(self.header_size)
-        # byte_string = self.stream.read()
+        # first read in whole file
+        self.stream.seek(self.header_size)
+        byte_string = self.stream.read()
         
-        # n_frames = int(len(byte_string) / self.frame_size_bytes) 
-        # data_slices = [slice(ii*64,(ii +1) *60 + 4 * ii) for ii in range(n_frames)]
-        # footer_slices = [slice((ii)*60,(ii) *60 + 4) for ii in range(1, n_frames + 1)]
+        n_frames = int(len(byte_string) / self.frame_size_bytes) 
+        data_slices = [slice(ii*64,(ii +1) *60 + 4 * ii) for ii in range(n_frames)]
+        footer_slices = [slice((ii)*60,(ii) *60 + 4) for ii in range(1, n_frames + 1)]
         
-        # data = b""
-        # footer = b""
-        # for data_frame, footer_frame in zip(data_slices, footer_slices):
-        #     data += byte_string[data_frame]
-        #     footer += byte_string[footer_frame]
+        data = np.zeros(n_frames * self.npts_per_frame, dtype=np.int32)
+        footer = np.zeros(n_frames)
+        for data_frame, footer_frame, ii in zip(data_slices, footer_slices, range(n_frames)):
             
-        # return data, footer
+            data[ii * self.npts_per_frame: (ii +1) * self.npts_per_frame] = [
+                unpack(">i", byte_string[data_frame][slice(jj * 3, (jj+1) * 3)] + b"\x00")[0]
+                for jj in range(self.npts_per_frame)]
+            footer[ii]= unpack("I", byte_string[footer_frame])[0]
+            
+        return data, footer
             
         
         
-        frames_in_buf = 0
-        index = 0
-        data = np.zeros(self.max_samples)  # 20 samples packed in a frame
+        # frames_in_buf = 0
+        # index = 0
+        # data = np.zeros(self.max_samples)  # 20 samples packed in a frame
 
-        while index < self.max_samples:
+        # while index < self.max_samples:
 
-            dataFrame = self.stream.read(self.frame_size_bytes)
-            if not dataFrame:
-                break
-                # if not self.open_next():
-                #     break
+        #     dataFrame = self.stream.read(self.frame_size_bytes)
+        #     if not dataFrame:
+        #         break
+        #         # if not self.open_next():
+        #         #     break
                 
-                # dataFrame = self.stream.read(self.frame_size_bytes)
-                # if not dataFrame:
-                #     break
+        #         # dataFrame = self.stream.read(self.frame_size_bytes)
+        #         # if not dataFrame:
+        #         #     break
 
-            dataFooter = unpack_from("I", dataFrame, self.frame_size_bytes - 4)
+        #     dataFooter = unpack_from("I", dataFrame, self.frame_size_bytes - 4)
 
-            # Check that there are no skipped frames
-            frameCount = dataFooter[0] & self.footer_idx_samp_mask
-            difCount = frameCount - self.last_frame
-            if (difCount != 1):
-                print(
-                    f"Ch [{self.ch_id}] is missing frames at {frameCount}, difference of {difCount}, check {index}\n")
-            self.last_frame = frameCount
+        #     # Check that there are no skipped frames
+        #     frameCount = dataFooter[0] & self.footer_idx_samp_mask
+        #     difCount = frameCount - self.last_frame
+        #     if (difCount != 1):
+        #         print(
+        #             f"Ch [{self.ch_id}] is missing frames at {frameCount}, difference of {difCount}, check {index}\n")
+        #     self.last_frame = frameCount
 
-            for ptrSamp in range(0, 60, 3):
-                tmpSampleTupple = unpack(">i", dataFrame[ptrSamp:ptrSamp + 3] + b'\x00')
-                data[index] = tmpSampleTupple[0] * self._scale_factor
-                index += 1
+        #     for ptrSamp in range(0, 60, 3):
+        #         tmpSampleTupple = unpack(">i", dataFrame[ptrSamp:ptrSamp + 3] + b'\x00')
+        #         data[index] = tmpSampleTupple[0] * self._scale_factor
+        #         index += 1
 
-            frames_in_buf += 1
+        #     frames_in_buf += 1
 
-            if self.report_hw_sat:
-                satCount = (dataFooter[0] & self.footer_sat_mask) >> 24
-                if satCount:
-                    print ("Ch [%s] Frame %d has %d saturations" %
-                            (self.ch_id, frameCount, satCount))
+        #     if self.report_hw_sat:
+        #         satCount = (dataFooter[0] & self.footer_sat_mask) >> 24
+        #         if satCount:
+        #             print ("Ch [%s] Frame %d has %d saturations" %
+        #                     (self.ch_id, frameCount, satCount))
 
-        return data[0:index]
+        # return data[0:index]
     
     def read_sequence(self, start=0, end=None):
         """
