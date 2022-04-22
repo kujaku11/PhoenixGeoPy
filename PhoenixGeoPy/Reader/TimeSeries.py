@@ -11,7 +11,9 @@ __author__ = 'Jorge Torres-Solis'
 # =============================================================================
 
 from pathlib import Path
-from numpy import empty, fromfile, float32, append, zeros
+import numpy as np
+from datetime import datetime
+
 from struct import unpack_from, unpack
 import string
 from PhoenixGeoPy.Reader.DataScaling import DataScaling
@@ -29,6 +31,8 @@ class Header:
         self.lpf_Hz = None                   # Nominal cutoff freq of the configured LPF of the channel
         self.preamp_gain = 1.0
         self.attenuator_gain = 1.0
+        self._rec_id = None
+        self._ch_id = None
         
         for key, value in kwargs.items():
             setattr(self, key, value)
@@ -46,6 +50,12 @@ class Header:
     def update(self, **kwargs):
         for key, value in kwargs.items():
             setattr(self, key, value)
+            
+    @property
+    def start_time(self):
+        if self._rec_id is not None:
+            return datetime.fromtimestamp(self._rec_id).isoformat()
+        return None
             
     def __populate_channel_type(self, config_fp):
         if config_fp[1] & 0x08 == 0x08:
@@ -156,6 +166,8 @@ class Header:
                 self.attenuator_gain = 523.0 / 5223.0
             else:
                 self.attenuator_gain = 0.1
+                
+    
    
     def unpack_header(self, stream):
         if self.header_size > 0:
@@ -164,15 +176,15 @@ class Header:
             header = stream.read(self.header_size)
         else:
             return
-        
-        header_info = {}      
+     
+        print("INFO: Unpacking header")
         self.file_type = unpack_from('B', header, 0)[0]
         self.file_version = unpack_from('B', header, 1)[0]
         self.length = unpack_from('H', header, 2)[0]
         self.inst_type = unpack_from('8s', header, 4)[0].decode("utf-8").strip(' ').strip('\x00')
         self.inst_serial = b''.join(unpack_from('cccccccc', header, 12)).strip(b'\x00')
-        self.rec_id = unpack_from('I', header, 20)[0]
-        self.ch_id = unpack_from('B', header, 24)[0]
+        self._rec_id = unpack_from('I', header, 20)[0]
+        self._ch_id = unpack_from('B', header, 24)[0]
         self.file_sequence = unpack_from('I', header, 25)[0]
         self.frag_period = unpack_from('H', header, 29)[0]
         self.ch_hwv = unpack_from('8s', header, 31)[0].decode("utf-8").strip(' ')
@@ -186,7 +198,6 @@ class Header:
             self.ch_ser = 0
         self.ch_fir = hex(unpack_from('I', header, 47)[0]) 
         self.conf_fp = unpack_from('BBBBBBBB', header, 51)
-        self.update(**header_info)
         
         # Channel type
         self.__populate_channel_type(self.conf_fp)
@@ -203,8 +214,7 @@ class Header:
         # Board-wide gains
         self.total_selectable_gain = self.channel_main_gain * self.preamp_gain * self.attenuator_gain
         self.total_circuitry_gain = self.total_selectable_gain * self.intrinsic_circuitry_gain
-   
-        header_info = {}
+
         self.sample_rate_base = unpack_from('H', header, 59)[0]
         self.sample_rate_exp = unpack_from('b', header, 61)[0]
         self.sample_rate = self.sample_rate_base
@@ -212,8 +222,8 @@ class Header:
             self.sample_rate *= pow(10, self.sample_rate_exp)
         self.bytes_per_sample = unpack_from('B', header, 62)[0]
         self.frame_size = unpack_from('I', header, 63)[0]
-        self.dataFooter = self.frame_size >> 24
-        self.frameSize = self.frame_size & 0x0ffffff
+        self.data_footer = self.frame_size >> 24
+        self.frame_size_bytes = self.frame_size & 0x0ffffff
         self.decimation_node_id = unpack_from('H', header, 67)[0]
         self.frame_rollover_count = unpack_from('H', header, 69)[0]
         self.gps_long = unpack_from('f', header, 71)[0]
@@ -235,32 +245,17 @@ class Header:
         self.battery_voltage_mV = unpack_from('H', header, 105)[0]
         self.min_signal = unpack_from('f', header, 107)[0]
         self.max_signal = unpack_from('f', header, 111)[0]
-        
-        self.update(**header_info)
-    
 
 
-class _TSReaderBase(object):
+class _TSReaderBase(Header):
     def __init__(self, path, num_files=1, header_size=128, report_hw_sat=False):
         self._seq = None
-        
+        super().__init__(**{"header_size":header_size, "report_hw_sat": report_hw_sat})
         self.base_path = path
         self.last_seq = self.seq + num_files
         self.stream = None
-        self.report_hw_sat = report_hw_sat
-        self.header = Header()
-        self.header_size = header_size
-        self.dataHeader = None
-        self.open_file_seq(self.seq)   # Open the file passed as the fisrt file in the sequence to stream
-        self.ad_plus_minus_range = 5.0  # differential voltage range that the A/D can measure (Board model dependent)
-        self.channel_type = "?"           # "E" or "H"
-        self.channel_main_gain = None     # The value of the main gain of the board
-        self.intrinsic_circuitry_gain = None  # Circuitry Gain not directly configurable by the user
-        self.total_circuitry_gain = None  # Total board Gain both intrinsic gain and user-seletable gain in circuit
-        self.total_selectable_gain = None  # Total of the gain that is selectable by the user (i.e. att * pre * gain)
-        self.lpf_Hz = None                   # Nominal cutoff freq of the configured LPF of the channel
-        self.preamp_gain = 1.0
-        self.attenuator_gain = 1.0
+        # Open the file passed as the fisrt file in the sequence to stream
+        self._open_file(self.base_path)   
         
     @property
     def base_path(self):
@@ -287,11 +282,25 @@ class _TSReaderBase(object):
     
     @property
     def rec_id(self):
-        return self.base_path.stem.split("_")[1]
+        if self._rec_id is None:
+            return self.base_path.stem.split("_")[1]
+        else:
+            return self._rec_id
+    
+    @rec_id.setter
+    def rec_id(self, value):
+        self._rec_id = value
     
     @property
     def ch_id(self):
-        return self.base_path.stem.split("_")[2]
+        if self._ch_id is None:
+            return self.base_path.stem.split("_")[2]
+        else:
+            return self._ch_id
+        
+    @ch_id.setter
+    def ch_id(self, value):
+        self._ch_id = value
         
     @property
     def seq(self):
@@ -310,6 +319,7 @@ class _TSReaderBase(object):
     @property
     def max_samples(self):
         return int((self.file_size - self.header_size * 3) / 3)
+
     @property
     def sequence_list(self):
         """
@@ -319,10 +329,8 @@ class _TSReaderBase(object):
     
     def _open_file(self, filename):
         if filename.exists():
-            print(f"Next file is {filename}... opening")
+            print(f"INFO: Opening {filename}")
             self.stream = open(filename, 'rb')
-            if self.header_size > 0:
-                self.dataHeader = self.stream.read(self.header_size)
             return True
         return False
     
@@ -344,197 +352,6 @@ class _TSReaderBase(object):
         new_path = self.sequence_list[self.seq - 1]
         return self._open_file(new_path)
 
-    def __populate_channel_type(self, config_fp):
-        if config_fp[1] & 0x08 == 0x08:
-            self.channel_type = "E"
-        else:
-            self.channel_type = "H"
-        # Channel type detected by electronics
-        # this normally matches self.channel_type, but used in electronics design and testing
-        if config_fp[1] & 0x20 == 0x20:
-            self.detected_channel_type = 'E'
-        else:
-            self.detected_channel_type = 'H'
-
-    def __populate_lpf(self, config_fp):
-        if config_fp[0] & 0x80 == 0x80:            # LPF on
-            if config_fp[0] & 0x03 == 0x03:
-                self.lpf_Hz = 10
-            elif config_fp[0] & 0x03 == 0x02:
-                if (self.board_model_main == "BCM03" or self.board_model_main == "BCM06"):
-                    self.lpf_Hz = 1000
-                else:
-                    self.lpf_Hz = 100
-            elif config_fp[0] & 0x03 == 0x01:
-                if (self.board_model_main == "BCM03" or self.board_model_main == "BCM06"):
-                    self.lpf_Hz = 10000
-                else:
-                    self.lpf_Hz = 1000
-        else:                                      # LPF off
-            if (self.board_model_main == "BCM03" or self.board_model_main == "BCM06"):
-                self.lpf_Hz = 17800
-            else:
-                self.lpf_Hz = 10000
-
-    def __popuate_peamp_gain(self, config_fp):
-        if self.channel_type == "?":
-            raise Exception("Channel type must be set before attemting to calculate preamp gain")
-        preamp_on = bool(config_fp[0] & 0x10)
-        self.preamp_gain = 1.0
-        if self.channel_type == "E":
-            if preamp_on is True:
-                if self.board_model_main == "BCM01" or self.board_model_main == "BCM03":
-                    self.preamp_gain = 4.0
-                    if (self.board_model_revision == "L"):
-                        #Account for BCM01-L experimental prototype
-                        self.preamp_gain = 8.0
-                else:
-                    self.preamp_gain = 8.0
-                    # Acount for experimental prototype BCM05-A
-                    if self.ch_hwv[0:7] == "BCM05-A":
-                        self.preamp_gain = 4.0
-    
-    def __populate_main_gain(self, config_fp):
-        # BCM05-B and BCM06 introduced different selectable gains
-        new_gains = True   # we asume any newer board will have the new gain banks
-        if self.board_model_main == "BCM01" or self.board_model_main == "BCM03":
-            # Original style 24 KSps boards and original 96 KSps boards
-            new_gains = False
-        if self.ch_hwv[0:7] == "BCM05-A":
-            # Acount for experimental prototype BCM05-A, which also had original gain banks
-            new_gains = False
-        if config_fp[0] & 0x0C == 0x00:
-            self.channel_main_gain = 1.0
-        elif config_fp[0] & 0x0C == 0x04:
-            self.channel_main_gain = 4.0
-        elif config_fp[0] & 0x0C == 0x08:
-            self.channel_main_gain = 6.0
-            if not new_gains:
-                self.channel_main_gain = 16.0
-        elif config_fp[0] & 0x0C == 0x0C:
-            self.channel_main_gain = 8.0
-            if not new_gains:
-                self.channel_main_gain = 32.0
-
-    def __handle_sensor_range(self, config_fp):
-        """This function will adjust the intrinsic circuitry gain based on the
-           sensor range configuration in the configuration fingerprint
-           
-           For this, we consider that for the Electric channel, calibration path, or H-legacy
-           sensors all go through a 1/4 gain stage, and then they get a virtial x2 gain from
-           Single-ended-diff before the A/D. In the case of newer sensors (differential)
-           instead of a 1/4 gain stage, there is only a 1/2 gain stage
-           
-           Therefore, in the E,cal and legacy sensor case the circuitry gain is 1/2, while for
-           newer sensors it is 1
-           """
-        if self.channel_type == "?":
-            raise Exception("Channel type must be set before attemting to calculate preamp gain")
-        self.intrinsic_circuitry_gain = 0.5   
-        if self.channel_type == "H":
-            if config_fp[1] & 0x01 == 0x01:
-                self.intrinsic_circuitry_gain = 1.0
-
-    def __populate_attenuator_gain(self, config_fp):
-        self.attenuator_gain = 1.0    # Asume attenuator off
-        if self.channel_type == "?":
-            raise Exception("Channel type must be set before attemting to calculate preamp gain")
-        attenuator_on = bool(config_fp[4] & 0x01)
-        if attenuator_on and self.channel_type == "E":
-            new_attenuator = True  # By default assume that we are dealing with a newer types of boards
-            if self.board_model_main == "BCM01" or self.board_model_main == "BCM03":
-                # Original style 24 KSps boards and original 96 KSps boards
-                new_attenuator = False
-            if self.cs_hwv[0:7] == "BCM05-A":
-                # Acount for experimental prototype BCM05-A, which also had original gain banks
-                new_attenuator = False
-
-            if new_attenuator:
-                self.attenuator_gain = 523.0 / 5223.0
-            else:
-                self.attenuator_gain = 0.1
-
-    def unpack_header(self):
-        if self.stream is None:
-            self.stream = open(self.base_path, 'rb')
-            if self.header_size > 0:
-                self.dataHeader = self.stream.read(self.header_size)
-                
-        
-        header_info = {}      
-        header_info['file_type'] = unpack_from('B', self.dataHeader, 0)[0]
-        header_info['file_version'] = unpack_from('B', self.dataHeader, 1)[0]
-        header_info['length'] = unpack_from('H', self.dataHeader, 2)[0]
-        header_info['inst_type'] = unpack_from('8s', self.dataHeader, 4)[0].decode("utf-8").strip(' ').strip('\x00')
-        header_info['inst_serial'] = b''.join(unpack_from('cccccccc', self.dataHeader, 12)).strip(b'\x00')
-        header_info['rec_id'] = unpack_from('I', self.dataHeader, 20)[0]
-        header_info['ch_id'] = unpack_from('B', self.dataHeader, 24)[0]
-        header_info['file_sequence'] = unpack_from('I', self.dataHeader, 25)[0]
-        header_info['frag_period'] = unpack_from('H', self.dataHeader, 29)[0]
-        header_info['ch_hwv'] = unpack_from('8s', self.dataHeader, 31)[0].decode("utf-8").strip(' ')
-        self.board_model_main = header_info['ch_hwv'][0:5]
-        self.board_model_revision = header_info['ch_hwv'][6:1]
-        header_info['ch_ser'] = unpack_from('8s', self.dataHeader, 39)[0].decode("utf-8").strip('\x00')
-        # handle the case of backend < v0.14, which puts '--------' in ch_ser
-        if all(chars in string.hexdigits for chars in header_info['ch_ser']):
-            header_info['ch_ser'] = int(header_info['ch_ser'], 16)
-        else:
-            header_info['ch_ser'] = 0
-        header_info['ch_fir'] = hex(unpack_from('I', self.dataHeader, 47)[0])
-        config_fp = unpack_from('BBBBBBBB', self.dataHeader, 51)
-        header_info['conf_fp'] = config_fp
-        self.header.update(**header_info)
-        
-        # Channel type
-        self.__populate_channel_type(config_fp)
-        # Electric channel Preamp
-        self.__popuate_peamp_gain(config_fp)
-        # LPF
-        self.__populate_lpf(config_fp)
-        # Main Gain Stage
-        self.__populate_main_gain(config_fp)
-        # Sensor range
-        self.__handle_sensor_range(config_fp)
-        # Electric channel attenuator
-        self.__populate_attenuator_gain(config_fp)
-        # Board-wide gains
-        self.total_selectable_gain = self.channel_main_gain * self.preamp_gain * self.attenuator_gain
-        self.total_circuitry_gain = self.total_selectable_gain * self.intrinsic_circuitry_gain
-
-        header_info = {}
-        header_info['sample_rate_base'] = unpack_from('H', self.dataHeader, 59)[0]
-        header_info['sample_rate_exp'] = unpack_from('b', self.dataHeader, 61)[0]
-        header_info['sample_rate'] = header_info['sample_rate_base']
-        if header_info['sample_rate_exp'] != 0:
-            header_info['sample_rate'] *= pow(10, header_info['sample_rate_exp'])
-        header_info['bytes_per_sample'] = unpack_from('B', self.dataHeader, 62)[0]
-        header_info['frame_size'] = unpack_from('I', self.dataHeader, 63)[0]
-        self.dataFooter = header_info['frame_size'] >> 24
-        self.frameSize = header_info['frame_size'] & 0x0ffffff
-        header_info['decimation_node_id'] = unpack_from('H', self.dataHeader, 67)[0]
-        header_info['frame_rollover_count'] = unpack_from('H', self.dataHeader, 69)[0]
-        header_info['gps_long'] = unpack_from('f', self.dataHeader, 71)[0]
-        header_info['gps_lat'] = unpack_from('f', self.dataHeader, 75)[0]
-        header_info['gps_height'] = unpack_from('f', self.dataHeader, 79)[0]
-        header_info['gps_hacc'] = unpack_from('I', self.dataHeader, 83)[0]
-        header_info['gps_vacc'] = unpack_from('I', self.dataHeader, 87)[0]
-        header_info['timing_status'] = unpack_from('BBH', self.dataHeader, 91)
-        header_info['timing_flags'] = header_info['timing_status'][0]
-        header_info['timing_sat_count'] = header_info['timing_status'][1]
-        header_info['timing_stability'] = header_info['timing_status'][2]
-        header_info['future1'] = unpack_from('b', self.dataHeader, 95)[0]
-        header_info['future2'] = unpack_from('i', self.dataHeader, 97)[0]
-        header_info['saturated_frames'] = unpack_from('H', self.dataHeader, 101)[0]
-        if header_info['saturated_frames'] & 0x80 == 0x80:
-            header_info['saturated_frames'] &= 0x7F
-            header_info['saturated_frames'] <<= 4
-        header_info['missing_frames'] = unpack_from('H', self.dataHeader, 103)[0]
-        header_info['battery_voltage_mV'] = unpack_from('H', self.dataHeader, 105)[0]
-        header_info['min_signal'] = unpack_from('f', self.dataHeader, 107)[0]
-        header_info['max_signal'] = unpack_from('f', self.dataHeader, 111)[0]
-        
-        self.header.update(**header_info)
-
     def close(self):
         if self.stream is not None:
             self.stream.close()
@@ -547,7 +364,6 @@ class NativeReader(_TSReaderBase):
                  channel_type="E", report_hw_sat=False):
         # Init the base class
         super().__init__(path, num_files, header_size, report_hw_sat)
-        #_TSReaderBase.__init__(self, path, num_files, header_size, report_hw_sat)
 
         # Track the last frame seen by the streamer, to report missing frames
         self.last_frame = last_frame
@@ -557,7 +373,7 @@ class NativeReader(_TSReaderBase):
         self.ad_plus_minus_range = ad_plus_minus_range
 
         if header_size == 128:
-            self.unpack_header()
+            self.unpack_header(self.stream)
 
         # Now that we have the channel circuit-based gain (either form init or from the header)
         # We can calculate the voltage range at the input of the board.
@@ -579,17 +395,17 @@ class NativeReader(_TSReaderBase):
     def read_frames(self, num_frames):
         frames_in_buf = 0
         _idx_buf = 0
-        _data_buf = empty([num_frames * 20])  # 20 samples packed in a frame
+        _data_buf = np.empty([num_frames * 20])  # 20 samples packed in a frame
 
         while (frames_in_buf < num_frames):
 
             dataFrame = self.stream.read(64)
             if not dataFrame:
                 if not self.open_next():
-                    return empty([0])
+                    return np.empty([0])
                 dataFrame = self.stream.read(64)
                 if not dataFrame:
-                    return empty([0])
+                    return np.empty([0])
 
             dataFooter = unpack_from("I", dataFrame, 60)
 
@@ -619,26 +435,45 @@ class NativeReader(_TSReaderBase):
     
     @property
     def npts_per_frame(self):
-        return int((self.frameSize - 4) / 3)
+        return int((self.frame_size_bytes - 4) / 3)
     
     def read(self):
+            
+        # # first read in whole file
+        # self.stream.seek(self.header_size)
+        # byte_string = self.stream.read()
+        
+        # n_frames = int(len(byte_string) / self.frame_size_bytes) 
+        # data_slices = [slice(ii*64,(ii +1) *60 + 4 * ii) for ii in range(n_frames)]
+        # footer_slices = [slice((ii)*60,(ii) *60 + 4) for ii in range(1, n_frames + 1)]
+        
+        # data = b""
+        # footer = b""
+        # for data_frame, footer_frame in zip(data_slices, footer_slices):
+        #     data += byte_string[data_frame]
+        #     footer += byte_string[footer_frame]
+            
+        # return data, footer
+            
+        
+        
         frames_in_buf = 0
         index = 0
-        data = zeros(self.max_samples)  # 20 samples packed in a frame
+        data = np.zeros(self.max_samples)  # 20 samples packed in a frame
 
         while index < self.max_samples:
 
-            dataFrame = self.stream.read(self.frameSize)
+            dataFrame = self.stream.read(self.frame_size_bytes)
             if not dataFrame:
                 break
                 # if not self.open_next():
                 #     break
                 
-                # dataFrame = self.stream.read(self.frameSize)
+                # dataFrame = self.stream.read(self.frame_size_bytes)
                 # if not dataFrame:
                 #     break
 
-            dataFooter = unpack_from("I", dataFrame, self.frameSize - 4)
+            dataFooter = unpack_from("I", dataFrame, self.frame_size_bytes - 4)
 
             # Check that there are no skipped frames
             frameCount = dataFooter[0] & self.footer_idx_samp_mask
@@ -659,9 +494,30 @@ class NativeReader(_TSReaderBase):
                 satCount = (dataFooter[0] & self.footer_sat_mask) >> 24
                 if satCount:
                     print ("Ch [%s] Frame %d has %d saturations" %
-                           (self.ch_id, frameCount, satCount))
+                            (self.ch_id, frameCount, satCount))
 
         return data[0:index]
+    
+    def read_sequence(self, start=0, end=None):
+        """
+        Read sequences
+        
+        :param start: DESCRIPTION, defaults to 0
+        :type start: TYPE, optional
+        :param end: DESCRIPTION, defaults to None
+        :type end: TYPE, optional
+        :return: DESCRIPTION
+        :rtype: TYPE
+
+        """
+            
+        data = np.array([])
+        for fn in self.sequence_list[slice(start, end)]:
+            self._open_file(fn)
+            self.unpack_header(self.stream)
+            data = np.append(data, self.read())
+            
+        return data
 
 
     def skip_frames(self, num_frames):
@@ -694,14 +550,10 @@ class DecimatedSegmentedReader(_TSReaderBase):
        i.e. *.td_24k"""
     def __init__(self, path, num_files=1, report_hw_sat=False):
         # Init the base class
-        _TSReaderBase.__init__(self, path, num_files, 128, report_hw_sat)
+        super().__init__(path, num_files, 128, report_hw_sat)
         self.unpack_header()
         self.subheader = {}
 
-    def unpack_header(self):   # TODO: Work in progress, for now unpacking as raw time series header
-        if self.header_size == 128:
-            super(DecimatedSegmentedReader, self).unpack_header()
-            # TODO: Implement any specific header unpacking for this particular class below
 
     def read_subheader(self):
         subheaderBytes = self.stream.read(32)
@@ -722,16 +574,16 @@ class DecimatedSegmentedReader(_TSReaderBase):
             self.subheader['avgVal'] = unpack_from('f', subheaderBytes, 20)[0]
 
     def read_record_data(self):
-        ret_array = empty([0])
+        ret_array = np.empty([0])
         if (self.stream is not None
                 and self.subheader['samplesInRecord'] is not None
                 and self.subheader['samplesInRecord'] != 0):
-            ret_array = fromfile(self.stream, dtype=float32, count=self.subheader['samplesInRecord'])
+            ret_array = np.fromfile(self.stream, dtype=np.float32, count=self.subheader['samplesInRecord'])
             if ret_array.size == 0:
                 if not self.open_next():
-                    return empty([0])
-                # Array below will contain the data, or will be an empty array if end of series as desired
-                ret_array = fromfile(self.stream, dtype=float32, count=self.subheader['samplesInRecord'])
+                    return np.empty([0])
+                # Array below will contain the data, or will be an np.empty array if end of series as desired
+                ret_array = np.fromfile(self.stream, dtype=np.float32, count=self.subheader['samplesInRecord'])
 
         return ret_array
 
@@ -744,25 +596,20 @@ class DecimatedContinuousReader(_TSReaderBase):
     i.e. *.td_150, *.td_30"""
     def __init__(self, path, num_files=1, report_hw_sat=False):
         # Init the base class
-        _TSReaderBase.__init__(self, path, num_files, 128, report_hw_sat)
+        super().__init__(path, num_files, 128, report_hw_sat)
         self.unpack_header()
         self.subheader = {}
 
-    def unpack_header(self):   # TODO: Work in progress, for now unpacking as raw time series header
-        if self.header_size == 128:
-            super(DecimatedContinuousReader, self).unpack_header()
-            # TODO: Implement any specific header unpacking for this particular class below
-
     def read_data(self, numSamples):
-        ret_array = empty([0])
+        ret_array = np.empty([0])
         if self.stream is not None:
-            ret_array = fromfile(self.stream, dtype=float32, count=numSamples)
+            ret_array = np.fromfile(self.stream, dtype=np.float32, count=numSamples)
             while ret_array.size < numSamples:
                 if not self.open_next():
-                    return empty([0])
-                # Array below will contain the data, or will be an empty array if end of series as desired
-                ret_array = append(ret_array,
-                                   fromfile(self.stream,
-                                            dtype=float32,
+                    return np.empty([0])
+                # Array below will contain the data, or will be an np.empty array if end of series as desired
+                ret_array = np.append(ret_array,
+                                   np.fromfile(self.stream,
+                                            dtype=np.float32,
                                             count=(numSamples - ret_array.size)))
         return ret_array
