@@ -253,27 +253,31 @@ class Header:
                     if self.ch_hwv[0:7] == "BCM05-A":
                         self.preamp_gain = 4.0
     
-    def __populate_main_gain(self, config_fp):
-        # BCM05-B and BCM06 introduced different selectable gains
-        new_gains = True   # we asume any newer board will have the new gain banks
-        if self.board_model_main == "BCM01" or self.board_model_main == "BCM03":
-            # Original style 24 KSps boards and original 96 KSps boards
-            new_gains = False
-        if self.ch_hwv[0:7] == "BCM05-A":
-            # Acount for experimental prototype BCM05-A, which also had original gain banks
-            new_gains = False
-        if config_fp[0] & 0x0C == 0x00:
-            self.channel_main_gain = 1.0
-        elif config_fp[0] & 0x0C == 0x04:
-            self.channel_main_gain = 4.0
-        elif config_fp[0] & 0x0C == 0x08:
-            self.channel_main_gain = 6.0
-            if not new_gains:
-                self.channel_main_gain = 16.0
-        elif config_fp[0] & 0x0C == 0x0C:
-            self.channel_main_gain = 8.0
-            if not new_gains:
-                self.channel_main_gain = 32.0
+    
+    @property
+    def ch_main_gain(self):
+        if self._has_header():
+            # BCM05-B and BCM06 introduced different selectable gains
+            new_gains = True   # we asume any newer board will have the new gain banks
+            if self.board_model_main == "BCM01" or self.board_model_main == "BCM03":
+                # Original style 24 KSps boards and original 96 KSps boards
+                new_gains = False
+            if self.ch_board_model[0:7] == "BCM05-A":
+                # Acount for experimental prototype BCM05-A, which also had original gain banks
+                new_gains = False
+            if self.hardware_configuration[0] & 0x0C == 0x00:
+                main_gain = 1.0
+            elif self.hardware_configuration[0] & 0x0C == 0x04:
+                main_gain = 4.0
+            elif self.hardware_configuration[0] & 0x0C == 0x08:
+                main_gain = 6.0
+                if not new_gains:
+                    main_gain = 16.0
+            elif self.hardware_configuration[0] & 0x0C == 0x0C:
+                main_gain = 8.0
+                if not new_gains:
+                    main_gain = 32.0
+            return main_gain
    
     def __handle_sensor_range(self, config_fp):
         """This function will adjust the intrinsic circuitry gain based on the
