@@ -23,16 +23,50 @@ class Header:
         self.report_hw_sat = False
         self.header_size = 128
         self.ad_plus_minus_range = 5.0  # differential voltage range that the A/D can measure (Board model dependent)
-        self.channel_type = "?"           # "E" or "H"
         self.channel_main_gain = None     # The value of the main gain of the board
         self.intrinsic_circuitry_gain = None  # Circuitry Gain not directly configurable by the user
         self.total_circuitry_gain = None  # Total board Gain both intrinsic gain and user-seletable gain in circuit
         self.total_selectable_gain = None  # Total of the gain that is selectable by the user (i.e. att * pre * gain)
-        self.lpf_Hz = None                   # Nominal cutoff freq of the configured LPF of the channel
+        self.lp_frequency = None                   # Nominal cutoff freq of the configured LPF of the channel
         self.preamp_gain = 1.0
         self.attenuator_gain = 1.0
-        self._rec_id = None
-        self._ch_id = None
+        self._recording_id = None
+        self._channel_id = None
+        
+        self._unpack_dict = {
+            "file_type": {"dtype": 'B', "index": 0},
+            "file_version": {"dtype": 'B', "index": 1},
+            "header_length": {"dtype": 'H', "index": 2},
+            "instrument_type": {"dtype": '8s', "index": 4},
+            "serial_number": {"dtype": 'cccccccc', "index": 12},
+            "recording_id": {"dtype": 'I', "index": 20},
+            "channel_id": {"dtype": 'B', "index": 24},
+            "file_sequence": {"dtype": 'I', "index": 25},
+            "frag_period": {"dtype": 'H', "index": 29},
+            "ch_board_model": {"dtype": '8s', "index": 31},
+            "ch_board_serial": {"dtype": '8s', "index": 39},
+            "ch_firmware": {"dtype": 'I', "index": 47},
+            "hardware_configuration": {"dtype": 'BBBBBBBB', "index": 51},
+            "sample_rate_base":{"dtype": 'H', "index": 59},
+            "sample_rate_exp":{"dtype": 'b', "index": 61},
+            "bytes_per_sample":{"dtype": 'B', "index": 62},
+            "frame_size":{"dtype": 'I', "index": 63},
+            "decimation_node_id":{"dtype": 'H', "index": 67},
+            "frame_rollover_count":{"dtype": 'H', "index": 69},
+            "gps_long":{"dtype": 'f', "index": 71},
+            "gps_lat":{"dtype": 'f', "index": 75},
+            "gps_height":{"dtype": 'f', "index": 79},
+            "gps_hacc":{"dtype": 'I', "index": 83},
+            "gps_vacc":{"dtype": 'I', "index": 87},
+            "timing_status":{"dtype": 'BBH', "index": 91},
+            "future1":{"dtype": 'b', "index": 95},
+            "future2":{"dtype": 'i', "index": 97},
+            "saturated_frames":{"dtype": 'H', "index": 101},
+            "missing_frames":{"dtype": 'H', "index": 103},
+            "battery_voltage_mv":{"dtype": 'H', "index": 105},
+            "min_signal":{"dtype": 'f', "index": 107},
+            "max_signal":{"dtype": 'f', "index": 111},
+            }
         
         for key, value in kwargs.items():
             setattr(self, key, value)
@@ -47,47 +81,159 @@ class Header:
     def __repr__(self):
         return self.__str__()
     
-    def update(self, **kwargs):
-        for key, value in kwargs.items():
-            setattr(self, key, value)
-            
+    def _has_header(self):
+        if self._header is not None:
+            return True
+        return False
+    
+        
+    def _unpack_value(self, key):
+        if self._has_header():
+            return unpack_from(
+                self._unpack_dict[key]["dtype"], 
+                self._header,
+                self._unpack_dict[key]["index"]
+                )
+    
+    @property
+    def file_type(self):
+        if self._has_header():
+            return self._unpack_value("file_type")[0]
+    
+    @property
+    def file_version(self):
+        if self._has_header():
+            return self._unpack_value("file_version")[0]
+        
+    @property
+    def header_length(self):
+        if self._has_header():
+            return self._unpack_value("header_length")[0]
+    
+    @property
+    def instrument_type(self):
+        if self._has_header():
+            return self._unpack_value("instrument_type")[0].decode("utf-8").strip(' ').strip('\x00')
+    
+    @property
+    def instrument_serial_number(self, header):
+        if self._has_header():      
+            return b''.join(self._unpack_value("serial_number")).strip(b'\x00')
+    
+    @property
+    def recording_id(self):
+        if self._recording_id is None:
+            if self._has_header():
+                return self._unpack_value("recording_id")[0]
+        else:
+            return self._recording_id
+
+    @recording_id.setter
+    def recording_id(self, value):
+        self._recording_id = value
+        
     @property
     def start_time(self):
-        if self._rec_id is not None:
-            return datetime.fromtimestamp(self._rec_id).isoformat()
+        if self.recording_id is not None:
+            return datetime.fromtimestamp(self.recording_id).isoformat()
         return None
-            
-    def __populate_channel_type(self, config_fp):
-        if config_fp[1] & 0x08 == 0x08:
-            self.channel_type = "E"
+        
+    @property
+    def channel_id(self):
+        if self._channel_id is None:
+            if self._has_header():
+                return self._unpack_value("channel_id")[0]
         else:
-            self.channel_type = "H"
+            return self._channel_id
+
+    @channel_id.setter
+    def channel_id(self, value):
+        self._channel_id = value
+    
+    @property
+    def file_sequence(self):
+        if self._has_header():
+            return self._unpack_value("file_sequence")[0]
+
+    @property
+    def frag_period(self):
+        if self._has_header():
+            return self._unpack_value("frag_period")[0]  
+        
+    @property
+    def ch_board_model(self):
+        if self._has_header():
+            return self._unpack_value("ch_board_model")[0].decode("utf-8").strip(' ')
+        
+    @property
+    def board_model_main(self):
+        if self._has_header():
+            return self.ch_board_model[0:5]
+
+    @property
+    def board_model_revision(self):
+        if self._has_header():
+            return self.ch_board_model[6:1]    
+    
+    @property
+    def ch_board_serial(self):
+        if self._has_header():
+            value = self._unpack_value("ch_board_serial")[0].decode("utf-8").strip('\x00')
+            # handle the case of backend < v0.14, which puts '--------' in ch_ser
+            if all(chars in string.hexdigits for chars in value):
+                return int(value, 16)
+            else:
+                return 0 
+        
+    @property
+    def ch_firmware(self):
+        if self._has_header():
+            return self._unpack_value("ch_firmware")[0]
+        
+    @property
+    def hardware_configuration(self):
+        if self._has_header():
+            return self._unpack_value("hardware_configuration") 
+
+    @property 
+    def channel_type(self):
+        if self._has_header():
+            if self.hardware_configuration[1] & 0x08 == 0x08:
+                return "E"
+            else:
+                return "H"
+            
+    @property
+    def detected_channel_type(self):
         # Channel type detected by electronics
         # this normally matches self.channel_type, but used in electronics design and testing
-        if config_fp[1] & 0x20 == 0x20:
-            self.detected_channel_type = 'E'
-        else:
-            self.detected_channel_type = 'H'
-   
-    def __populate_lpf(self, config_fp):
-        if config_fp[0] & 0x80 == 0x80:            # LPF on
-            if config_fp[0] & 0x03 == 0x03:
-                self.lpf_Hz = 10
-            elif config_fp[0] & 0x03 == 0x02:
-                if (self.board_model_main == "BCM03" or self.board_model_main == "BCM06"):
-                    self.lpf_Hz = 1000
-                else:
-                    self.lpf_Hz = 100
-            elif config_fp[0] & 0x03 == 0x01:
-                if (self.board_model_main == "BCM03" or self.board_model_main == "BCM06"):
-                    self.lpf_Hz = 10000
-                else:
-                    self.lpf_Hz = 1000
-        else:                                      # LPF off
-            if (self.board_model_main == "BCM03" or self.board_model_main == "BCM06"):
-                self.lpf_Hz = 17800
+        if self._has_header():
+            if self.hardware_configuration[1] & 0x20 == 0x20:
+                return 'E'
             else:
-                self.lpf_Hz = 10000
+                return 'H'
+
+    @property
+    def lp_frequency(self):
+        if self._has_header():
+            if self.hardware_configuration[0] & 0x80 == 0x80:            # LPF on
+                if self.hardware_configuration[0] & 0x03 == 0x03:
+                    return 10
+                elif self.hardware_configuration[0] & 0x03 == 0x02:
+                    if (self.board_model_main == "BCM03" or self.board_model_main == "BCM06"):
+                        return 1000
+                    else:
+                        return 100
+                elif self.hardware_configuration[0] & 0x03 == 0x01:
+                    if (self.board_model_main == "BCM03" or self.board_model_main == "BCM06"):
+                        return  10000
+                    else:
+                        return 1000
+            else:                                      # LPF off
+                if (self.board_model_main == "BCM03" or self.board_model_main == "BCM06"):
+                    return 17800
+                else:
+                    return 10000
    
     def __popuate_peamp_gain(self, config_fp):
         if self.channel_type == "?":
@@ -167,7 +313,7 @@ class Header:
             else:
                 self.attenuator_gain = 0.1
                 
-    
+
    
     def unpack_header(self, stream):
         if self.header_size > 0:
@@ -450,7 +596,7 @@ class NativeReader(_TSReaderBase):
         data = np.zeros(n_frames * self.npts_per_frame, dtype=np.int32)
         footer = np.zeros(n_frames)
         for data_frame, footer_frame, ii in zip(data_slices, footer_slices, range(n_frames)):
-            
+            # need to make this part more efficient
             data[ii * self.npts_per_frame: (ii +1) * self.npts_per_frame] = [
                 unpack(">i", byte_string[data_frame][slice(jj * 3, (jj+1) * 3)] + b"\x00")[0]
                 for jj in range(self.npts_per_frame)]
