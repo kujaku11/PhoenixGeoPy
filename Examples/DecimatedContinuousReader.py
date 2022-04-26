@@ -1,8 +1,10 @@
 import sys
-sys.path.append(r'..')
+
+sys.path.append(r"..")
 from PhoenixGeoPy.Reader.TimeSeries import DecimatedContinuousReader
 from matplotlib.pyplot import plot, draw, title, pause, clf
 from numpy import linspace
+
 
 def console_input(message):
     if sys.version_info[0] < 3:
@@ -11,10 +13,11 @@ def console_input(message):
     else:
         return input(message)
 
+
 # ========================================================================
 def plot_data(data_samples):
     ts_start_sample = sample_rate * plot_data.second_read
-    x_sample = linspace(ts_start_sample, ts_start_sample + sample_rate -1, sample_rate)
+    x_sample = linspace(ts_start_sample, ts_start_sample + sample_rate - 1, sample_rate)
     clf()
     plot(x_sample, data)
     draw()
@@ -23,19 +26,20 @@ def plot_data(data_samples):
     plot_data.second_read += 1
 
     # Ask in the console what to do next
-    answer = console_input('Command? f=forward, x=exit\n')
-    while answer != 'f' and answer != 'x':
-        answer = console_input('Invalid input, Command? f=forward, x=exit\n')
+    answer = console_input("Command? f=forward, x=exit\n")
+    while answer != "f" and answer != "x":
+        answer = console_input("Invalid input, Command? f=forward, x=exit\n")
 
     keep_reading = False
-    if answer == 'f':
+    if answer == "f":
         keep_reading = True
-    elif answer == 'x':
+    elif answer == "x":
         keep_reading = False
 
     return keep_reading
 
-plot_data.second_read=0
+
+plot_data.second_read = 0
 
 # ========================================================================
 if __name__ == "__main__" and __package__ is None:
@@ -50,7 +54,7 @@ if __name__ == "__main__" and __package__ is None:
     sample_rate = decimated_reader.header_info["sample_rate"]
 
     keep_running = True
-    while (keep_running):
+    while keep_running:
         # Read one second worth of data
         data = decimated_reader.read_data(sample_rate)
         if len(data) < sample_rate:

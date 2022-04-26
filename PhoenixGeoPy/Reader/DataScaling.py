@@ -3,7 +3,7 @@
 a time series reader of the MTU-5C Family
 """
 
-__author__ = 'Jorge Torres-Solis'
+__author__ = "Jorge Torres-Solis"
 
 
 class DataScaling:
