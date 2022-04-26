@@ -169,6 +169,17 @@ class NativeReader(TSReaderBase):
         ]
         for count in range(self._get_number_of_chunks()):
             byte_string = self.stream.read(self._chunk_size)
+            
+            # maybe try to read it all into a numpy array and then reshape
+            # add the 4 byte and convert?
+            # np.frombuffer(s.read(), dtype=np.dtype("u1"))
+            # reshape to (nframes, 64)
+            # split footer off c = b[:, 0:60].
+            # f = int(c.shape / 12)
+            # f = int(c.size / 12)
+            # f
+            # from numpy.lib.stride_tricks import as_strided
+            # rd = as_strided(c.view(np.int32), strides=(12,3), shape=(f, 4))
 
             for data_frame, footer_frame, ii in zip(
                 data_slices, footer_slices, range(n_frames)
