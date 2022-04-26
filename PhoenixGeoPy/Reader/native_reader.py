@@ -145,6 +145,9 @@ class NativeReader(TSReaderBase):
         # will need to take into account residual if the chunk size is not
         # a good choice.
         return int((self.file_size - self.header_size) / self._chunk_size)
+    
+    def _get_number_of_frames_per_chunk(self):
+        return int((self._chunk_size / self.frame_size_bytes) * self.npts_per_frame)
 
     def read(self):
 
@@ -161,7 +164,6 @@ class NativeReader(TSReaderBase):
         data_slices = [
             slice(ii * 64, (ii + 1) * 60 + 4 * ii) for ii in range(chunk_frames)
         ]
-        print(data_slices)
         footer_slices = [
             slice((ii) * 60, (ii) * 60 + 4) for ii in range(1, chunk_frames + 1)
         ]
@@ -171,9 +173,10 @@ class NativeReader(TSReaderBase):
             for data_frame, footer_frame, ii in zip(
                 data_slices, footer_slices, range(n_frames)
             ):
-                # need to make this part more efficient
-                index_0 = count * self._chunk_size + ii * self.npts_per_frame
-                index_1 = count * self._chunk_size + (ii + 1) * self.npts_per_frame
+                # need to make this part more efficient, should use numpy 
+                # for this, should be faster and wouldn't have to loop
+                index_0 = (count * chunk_frames + ii) * self.npts_per_frame
+                index_1 = (count * chunk_frames + ii + 1) * self.npts_per_frame
                 data[index_0:index_1] = [
                     unpack(
                         ">i",
