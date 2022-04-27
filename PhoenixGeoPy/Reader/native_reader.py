@@ -119,7 +119,7 @@ class NativeReader(TSReaderBase):
             for ptrSamp in range(0, 60, 3):
                 # unpack expects 4 bytes, but the frames are only 3?
                 value = unpack(">i", dataFrame[ptrSamp : ptrSamp + 3] + b"\x00")[0]
-                _data_buf[_idx_buf] = value * self.scale_factor
+                _data_buf[_idx_buf] = value #* self.scale_factor
                 _idx_buf += 1
 
             frames_in_buf += 1
@@ -145,7 +145,7 @@ class NativeReader(TSReaderBase):
         # will need to take into account residual if the chunk size is not
         # a good choice.
         return int((self.file_size - self.header_size) / self._chunk_size)
-    
+
     def _get_number_of_frames_per_chunk(self):
         return int((self._chunk_size / self.frame_size_bytes) * self.npts_per_frame)
 
@@ -158,7 +158,11 @@ class NativeReader(TSReaderBase):
         footer = np.zeros(n_frames)
 
         # start from the end of the header
-        self.stream.seek(self.header_size)
+        try:
+            self.stream.seek(self.header_size)
+        except ValueError:
+            self._open_file(self.base_path)
+            self.stream.seek(self.header_size)
 
         chunk_frames = int(self._chunk_size / self.frame_size_bytes)
         data_slices = [
@@ -169,13 +173,11 @@ class NativeReader(TSReaderBase):
         ]
         for count in range(self._get_number_of_chunks()):
             byte_string = self.stream.read(self._chunk_size)
-            
-
 
             for data_frame, footer_frame, ii in zip(
                 data_slices, footer_slices, range(n_frames)
             ):
-                # need to make this part more efficient, should use numpy 
+                # need to make this part more efficient, should use numpy
                 # for this, should be faster and wouldn't have to loop
                 index_0 = (count * chunk_frames + ii) * self.npts_per_frame
                 index_1 = (count * chunk_frames + ii + 1) * self.npts_per_frame
@@ -189,34 +191,32 @@ class NativeReader(TSReaderBase):
                 footer[ii] = unpack("I", byte_string[footer_frame])[0]
 
         return data, footer
-    
+
     def read_np(self):
         from numpy.lib.stride_tricks import as_strided
-        if self.stream:
-            self.close()
-        # start from the end of the header
+
         # should do a memory map otherwise things can go badly with as_strided
-        raw_data = np.memmap(self.base_path, ">i1", mode="r")
-        raw_data = raw_data[self.header_size:]
+        raw_data = np.memmap(self.base_path, "u1", mode="r")
+        raw_data = raw_data[self.header_size :]
         # for now this will round, will need to take into account add bytes
         n_frames = int(raw_data.size / self.frame_size_bytes)
-        
+
         # reshape to (nframes, 64)
         raw_data = raw_data.reshape((n_frames, self.frame_size_bytes))
-        raw_frames = int(raw_data.size / 12)
+
+        ts = raw_data[:, 0:self.npts_per_frame * 3].flatten()
+        footer = raw_data[:, self.npts_per_frame * 3:].flatten()
         
-        ts = raw_data[:, 0:60].flatten()
-        footer = raw_data[:, 60:].flatten()
-        
+        raw_frames = int(ts.size / 12)
+
         ts_data = as_strided(
-            ts.view(np.int32), strides=(12, 3, ), shape=(raw_frames, 4)
-            )
-        ts_data = ts_data.byteswap()
+            ts.view(np.int32),
+            strides=(12, 3),
+            shape=(raw_frames, 4),
+        ).flatten().byteswap() # somehow the number is off by just a bit 
         footer = footer.view(np.int32)
-        print(ts_data.shape, footer.shape)
-        
+
         return ts_data, footer
-        
 
     def read_sequence(self, start=0, end=None):
         """
