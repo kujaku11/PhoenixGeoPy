@@ -12,6 +12,7 @@ __author__ = "Jorge Torres-Solis"
 # =============================================================================
 
 import numpy as np
+from numpy.lib.stride_tricks import as_strided
 
 from struct import unpack_from, unpack
 from PhoenixGeoPy.Reader import DataScaling, TSReaderBase
@@ -119,7 +120,7 @@ class NativeReader(TSReaderBase):
             for ptrSamp in range(0, 60, 3):
                 # unpack expects 4 bytes, but the frames are only 3?
                 value = unpack(">i", dataFrame[ptrSamp : ptrSamp + 3] + b"\x00")[0]
-                _data_buf[_idx_buf] = value #* self.scale_factor
+                _data_buf[_idx_buf] = value * self.scale_factor
                 _idx_buf += 1
 
             frames_in_buf += 1
@@ -149,7 +150,7 @@ class NativeReader(TSReaderBase):
     def _get_number_of_frames_per_chunk(self):
         return int((self._chunk_size / self.frame_size_bytes) * self.npts_per_frame)
 
-    def read(self):
+    def read_slow(self):
 
         # first read in whole file, probably should do this in chunks
 
@@ -192,11 +193,10 @@ class NativeReader(TSReaderBase):
 
         return data, footer
 
-    def read_np(self):
-        from numpy.lib.stride_tricks import as_strided
+    def read(self):
 
         # should do a memory map otherwise things can go badly with as_strided
-        raw_data = np.memmap(self.base_path, "u1", mode="r")
+        raw_data = np.memmap(self.base_path, ">i1", mode="r")
         raw_data = raw_data[self.header_size :]
         # for now this will round, will need to take into account add bytes
         n_frames = int(raw_data.size / self.frame_size_bytes)
@@ -204,16 +204,21 @@ class NativeReader(TSReaderBase):
         # reshape to (nframes, 64)
         raw_data = raw_data.reshape((n_frames, self.frame_size_bytes))
 
+        # split the data from the footer
         ts = raw_data[:, 0:self.npts_per_frame * 3].flatten()
         footer = raw_data[:, self.npts_per_frame * 3:].flatten()
         
+        # get the number of raw byte frames 
         raw_frames = int(ts.size / 12)
 
+        # stride over bytes making new 4 bytes for a 32bit integer and scale
         ts_data = as_strided(
             ts.view(np.int32),
             strides=(12, 3),
             shape=(raw_frames, 4),
-        ).flatten().byteswap() # somehow the number is off by just a bit 
+        ).flatten().byteswap() * self.scale_factor # somehow the number is off by just a bit ~1E-7 V
+        
+        # view the footer as an int32
         footer = footer.view(np.int32)
 
         return ts_data, footer
