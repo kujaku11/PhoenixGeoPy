@@ -170,16 +170,7 @@ class NativeReader(TSReaderBase):
         for count in range(self._get_number_of_chunks()):
             byte_string = self.stream.read(self._chunk_size)
             
-            # maybe try to read it all into a numpy array and then reshape
-            # add the 4 byte and convert?
-            # np.frombuffer(s.read(), dtype=np.dtype("u1"))
-            # reshape to (nframes, 64)
-            # split footer off c = b[:, 0:60].
-            # f = int(c.shape / 12)
-            # f = int(c.size / 12)
-            # f
-            # from numpy.lib.stride_tricks import as_strided
-            # rd = as_strided(c.view(np.int32), strides=(12,3), shape=(f, 4))
+
 
             for data_frame, footer_frame, ii in zip(
                 data_slices, footer_slices, range(n_frames)
@@ -198,6 +189,34 @@ class NativeReader(TSReaderBase):
                 footer[ii] = unpack("I", byte_string[footer_frame])[0]
 
         return data, footer
+    
+    def read_np(self):
+        from numpy.lib.stride_tricks import as_strided
+        if self.stream:
+            self.close()
+        # start from the end of the header
+        # should do a memory map otherwise things can go badly with as_strided
+        raw_data = np.memmap(self.base_path, ">i1", mode="r")
+        raw_data = raw_data[self.header_size:]
+        # for now this will round, will need to take into account add bytes
+        n_frames = int(raw_data.size / self.frame_size_bytes)
+        
+        # reshape to (nframes, 64)
+        raw_data = raw_data.reshape((n_frames, self.frame_size_bytes))
+        raw_frames = int(raw_data.size / 12)
+        
+        ts = raw_data[:, 0:60].flatten()
+        footer = raw_data[:, 60:].flatten()
+        
+        ts_data = as_strided(
+            ts.view(np.int32), strides=(12, 3, ), shape=(raw_frames, 4)
+            )
+        ts_data = ts_data.byteswap()
+        footer = footer.view(np.int32)
+        print(ts_data.shape, footer.shape)
+        
+        return ts_data, footer
+        
 
     def read_sequence(self, start=0, end=None):
         """
