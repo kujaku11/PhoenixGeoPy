@@ -11,23 +11,181 @@ __author__ = "Jorge Torres-Solis"
 # Imports
 # =============================================================================
 
+from datetime import datetime
 import numpy as np
 
 from struct import unpack_from
 from PhoenixGeoPy.Reader import TSReaderBase
 
 # =============================================================================
+class SubHeader:
+    """
+    Class for subheader of segmented files
+    """
+    
+    def __init__(self, **kwargs):
+        self.header_length = 32
+        self._header = None
 
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+
+        self._unpack_dict = {
+            "gps_time_stamp": {"dtype": "I", "index": 0},
+            "n_samples": {"dtype": "I", "index": 4},
+            "saturation_count": {"dtype": "H", "index": 8},
+            "missing_count": {"dtype": "H", "index": 10},
+            "value_min": {"dtype": "f", "index": 12},
+            "value_max": {"dtype": "f", "index": 16},
+            "value_mean": {"dtype": "f", "index": 20},
+            }
+        
+    def __str__(self):
+        lines = ["subheader information:", "-"*30]
+        for key in [
+            "gps_time_stamp",
+            "n_samples",
+            "saturation_count",
+            "missing_count",
+            "value_min",
+            "value_max",
+            "value_mean",
+
+        ]:
+            lines.append(f"\t{key:<25}: {getattr(self, key)}")
+
+        return "\n".join(lines)
+
+    def __repr__(self):
+        return self.__str__()
+        
+    def _has_header(self):
+        if self._header is not None:
+            return True
+        return False
+    
+    def _unpack_value(self, key):
+        if self._has_header():
+            return unpack_from(
+                self._unpack_dict[key]["dtype"],
+                self._header,
+                self._unpack_dict[key]["index"],
+            )
+    
+    @property
+    def gps_time_stamp(self):
+        if self._has_header():
+            return self._unpack_value("gps_time_stamp")[0]
+        
+    @property
+    def gps_time_stamp_isoformat(self):
+        return datetime.fromtimestamp(self._unpack_value("gps_time_stamp")[0]).isoformat()
+        
+    @property
+    def n_samples(self):
+        if self._has_header():
+            return self._unpack_value("n_samples")[0]
+        
+    @property
+    def saturation_count(self):
+        if self._has_header():
+            return self._unpack_value("saturation_count")[0]
+        
+    @property
+    def missing_count(self):
+        if self._has_header():
+            return self._unpack_value("missing_count")[0]
+        
+    @property
+    def value_min(self):
+        if self._has_header():
+            return self._unpack_value("value_min")[0]
+        
+    @property
+    def value_max(self):
+        if self._has_header():
+            return self._unpack_value("value_max")[0]
+        
+    @property
+    def value_mean(self):
+        if self._has_header():
+            return self._unpack_value("value_mean")[0]
+        
+    def unpack_header(self, stream):
+        if self.header_length > 0:
+            # be sure to read from the beginning of the file
+            self._header = stream.read(self.header_length)
+        else:
+            return
+        
+class Segment(SubHeader):
+    """
+    A segment class to hold a single segment
+    """
+
+    def __init__(self, stream):
+        
+        super().__init__()
+        self.stream = stream
+        self.data = None
+        
+    def read_segment(self):
+        """
+        Read the whole file in 
+        
+        :return: DESCRIPTION
+        :rtype: TYPE
+
+        """
+
+        self.unpack_header(self.stream)
+        self.data = np.fromfile(self.stream, dtype=np.float32, count=self.n_samples)
+
+        
+        
 
 class DecimatedSegmentedReader(TSReaderBase):
-    """Class to create a streamer for segmented decimated time series,
-    i.e. *.td_24k"""
+    """
+    Class to create a streamer for segmented decimated time series,
+    i.e. *.td_24k
+    
+    These files have a sub header
+    
+    """
 
     def __init__(self, path, num_files=1, report_hw_sat=False):
         # Init the base class
-        super().__init__(path, num_files, 128, report_hw_sat)
-        self.unpack_header()
+        super().__init__(
+            path, num_files=num_files, header_length=128, report_hw_sat=report_hw_sat
+            ) 
+
+        self.unpack_header(self.stream)
+        self.sub_header = SubHeader()
         self.subheader = {}
+        
+    def read_segments(self):
+        """
+        Read the whole file in 
+        
+        :return: DESCRIPTION
+        :rtype: TYPE
+
+        """
+
+        segments = []
+        count = 1
+        while True:
+            try:
+                segment = Segment(self.stream)
+                segment.read_segment()
+                segments.append(segment)
+                
+                print(count)
+                count += 1
+            except:
+                break
+              
+        return segments
 
     def read_subheader(self):
         subheaderBytes = self.stream.read(32)
@@ -49,6 +207,8 @@ class DecimatedSegmentedReader(TSReaderBase):
 
     def read_record_data(self):
         ret_array = np.empty([0])
+        self.stream.seek(self.header_length)
+        self.read_subheader()
         if (
             self.stream is not None
             and self.subheader["samplesInRecord"] is not None
@@ -69,6 +229,3 @@ class DecimatedSegmentedReader(TSReaderBase):
 
         return ret_array
 
-    def read_record(self):
-        self.read_subheader()
-        return self.read_record_data()

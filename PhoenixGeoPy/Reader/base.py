@@ -9,20 +9,16 @@ __author__ = "Jorge Torres-Solis"
 # =============================================================================
 # Imports
 # =============================================================================
-
 from pathlib import Path
-import numpy as np
-
-from struct import unpack_from
 from PhoenixGeoPy.Reader import Header
 
 # =============================================================================
 
 
 class TSReaderBase(Header):
-    def __init__(self, path, num_files=1, header_size=128, report_hw_sat=False):
+    def __init__(self, path, num_files=1, header_length=128, report_hw_sat=False):
         self._seq = None
-        super().__init__(**{"header_size": header_size, "report_hw_sat": report_hw_sat})
+        super().__init__(**{"header_length": header_length, "report_hw_sat": report_hw_sat})
         self.base_path = path
         self.last_seq = self.seq + num_files
         self.stream = None
@@ -73,7 +69,7 @@ class TSReaderBase(Header):
 
     @property
     def max_samples(self):
-        return int((self.file_size - self.header_size * 3) / 3)
+        return int((self.file_size - self.header_length * 3) / 3)
 
     @property
     def sequence_list(self):

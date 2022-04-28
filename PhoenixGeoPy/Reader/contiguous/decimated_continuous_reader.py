@@ -29,7 +29,7 @@ class DecimatedContinuousReader(TSReaderBase):
     def __init__(self, path, num_files=1, report_hw_sat=False):
         # Init the base class
         super().__init__(
-            path, num_files=num_files, header_size=128, report_hw_sat=report_hw_sat
+            path, num_files=num_files, header_length=128, report_hw_sat=report_hw_sat
             ) 
 
         self.unpack_header(self.stream)

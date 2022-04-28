@@ -25,7 +25,7 @@ import string
 class Header:
     def __init__(self, **kwargs):
         self.report_hw_sat = False
-        self.header_size = 128
+        self.header_length = 128
         self.ad_plus_minus_range = 5.0  # differential voltage range that the A/D can measure (Board model dependent)
         self._header = None
         self._recording_id = None
@@ -118,7 +118,12 @@ class Header:
     @property
     def header_length(self):
         if self._has_header():
-            return self._unpack_value("header_length")[0]
+            self._header_length = self._unpack_value("header_length")[0]
+        return self._header_length
+        
+    @header_length.setter
+    def header_length(self, value):
+        self._header_length = value
 
     @property
     def instrument_type(self):
@@ -530,9 +535,9 @@ class Header:
             return self._unpack_value("max_signal")[0]
 
     def unpack_header(self, stream):
-        if self.header_size > 0:
+        if self.header_length > 0:
             # be sure to read from the beginning of the file
             stream.seek(0)
-            self._header = stream.read(self.header_size)
+            self._header = stream.read(self.header_length)
         else:
             return

@@ -28,24 +28,24 @@ class NativeReader(TSReaderBase):
         path,
         num_files=1,
         scale_to=DataScaling.AD_input_volts,
-        header_size=128,
+        header_length=128,
         last_frame=0,
         ad_plus_minus_range=5.0,
         channel_type="E",
         report_hw_sat=False,
     ):
         # Init the base class
-        super().__init__(path, num_files, header_size, report_hw_sat)
+        super().__init__(path, num_files, header_length, report_hw_sat)
 
         self._chunk_size = 4096
 
         # Track the last frame seen by the streamer, to report missing frames
         self.last_frame = last_frame
-        self.header_size = header_size
+        self.header_length = header_length
         self.data_scaling = scale_to
         self.ad_plus_minus_range = ad_plus_minus_range
 
-        if header_size == 128:
+        if header_length == 128:
             self.unpack_header(self.stream)
 
         # Now that we have the channel circuit-based gain (either form init or from the header)
@@ -140,12 +140,12 @@ class NativeReader(TSReaderBase):
         return int((self.frame_size_bytes - 4) / 3)
 
     def _get_number_of_frames(self):
-        return int((self.file_size - self.header_size) / self.frame_size_bytes)
+        return int((self.file_size - self.header_length) / self.frame_size_bytes)
 
     def _get_number_of_chunks(self):
         # will need to take into account residual if the chunk size is not
         # a good choice.
-        return int((self.file_size - self.header_size) / self._chunk_size)
+        return int((self.file_size - self.header_length) / self._chunk_size)
 
     def _get_number_of_frames_per_chunk(self):
         return int((self._chunk_size / self.frame_size_bytes) * self.npts_per_frame)
@@ -160,10 +160,10 @@ class NativeReader(TSReaderBase):
 
         # start from the end of the header
         try:
-            self.stream.seek(self.header_size)
+            self.stream.seek(self.header_length)
         except ValueError:
             self._open_file(self.base_path)
-            self.stream.seek(self.header_size)
+            self.stream.seek(self.header_length)
 
         chunk_frames = int(self._chunk_size / self.frame_size_bytes)
         data_slices = [
@@ -197,7 +197,7 @@ class NativeReader(TSReaderBase):
 
         # should do a memory map otherwise things can go badly with as_strided
         raw_data = np.memmap(self.base_path, ">i1", mode="r")
-        raw_data = raw_data[self.header_size :]
+        raw_data = raw_data[self.header_length :]
         # for now this will round, will need to take into account add bytes
         n_frames = int(raw_data.size / self.frame_size_bytes)
 
