@@ -30,7 +30,7 @@ class Header:
         self._header = None
         self._recording_id = None
         self._channel_id = None
-        
+
         for key, value in kwargs.items():
             setattr(self, key, value)
 
@@ -120,7 +120,7 @@ class Header:
         if self._has_header():
             self._header_length = self._unpack_value("header_length")[0]
         return self._header_length
-        
+
     @header_length.setter
     def header_length(self, value):
         self._header_length = value

@@ -11,5 +11,5 @@ __all__ = [
     "TSReaderBase",
     "NativeReader",
     "DecimatedSegmentedReader",
-    "DecimatedContinuousReader"
+    "DecimatedContinuousReader",
 ]

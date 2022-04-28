@@ -22,7 +22,7 @@ class DecimatedContinuousReader(TSReaderBase):
     """
     Class to create a streamer for continuous decimated time series,
     i.e. *.td_150, *.td_30
-    
+
     These files have no sub header information.
     """
 
@@ -30,27 +30,27 @@ class DecimatedContinuousReader(TSReaderBase):
         # Init the base class
         super().__init__(
             path, num_files=num_files, header_length=128, report_hw_sat=report_hw_sat
-            ) 
+        )
 
         self.unpack_header(self.stream)
         self.subheader = {}
-    
+
     # need a read and read sequence
     def read(self):
         """
         Read in the full data from the file given
-        
+
         :return: DESCRIPTION
         :rtype: TYPE
 
         """
         self.stream.seek(self.header_size)
         return np.fromfile(self.stream, dtype=np.float32)
-    
+
     def read_sequence(self, start=0, end=None):
         """
         Read a sequence of files
-        
+
         :param start: DESCRIPTION, defaults to 0
         :type start: TYPE, optional
         :param end: DESCRIPTION, defaults to None
@@ -59,17 +59,16 @@ class DecimatedContinuousReader(TSReaderBase):
         :rtype: TYPE
 
         """
-        
+
         data = np.array([], dtype=np.float32)
         for fn in self.sequence_list[slice(start, end)]:
             self._open_file(fn)
             self.unpack_header(self.stream)
-            ts= self.read()
+            ts = self.read()
             data = np.append(data, ts)
-            
+
         return data
-    
-    
+
     def read_data(self, numSamples):
         ret_array = np.empty([0])
         if self.stream is not None:

@@ -18,7 +18,9 @@ from PhoenixGeoPy.Reader import Header
 class TSReaderBase(Header):
     def __init__(self, path, num_files=1, header_length=128, report_hw_sat=False):
         self._seq = None
-        super().__init__(**{"header_length": header_length, "report_hw_sat": report_hw_sat})
+        super().__init__(
+            **{"header_length": header_length, "report_hw_sat": report_hw_sat}
+        )
         self.base_path = path
         self.last_seq = self.seq + num_files
         self.stream = None
