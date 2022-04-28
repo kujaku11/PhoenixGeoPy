@@ -125,9 +125,9 @@ class Segment(SubHeader):
     A segment class to hold a single segment
     """
 
-    def __init__(self, stream):
+    def __init__(self, stream, **kwargs):
 
-        super().__init__()
+        super().__init__(**kwargs)
         self.stream = stream
         self.data = None
 
@@ -172,11 +172,23 @@ class DecimatedSegmentedReader(TSReaderBase):
 
         """
 
+        kwargs = {
+            "instrument_type": self.instrument_type,
+            "instrument_serial_number": self.instrument_serial_number,
+            "latitude": self.gps_lat,
+            "longitude": self.gps_long,
+            "elevation": self.gps_elevation,
+            "sample_rate": self.sample_rate,
+            "channel_id": self.channel_id,
+            "channel_type": self.channel_type,
+            "segment": 0,
+            }
         segments = []
         count = 1
         while True:
             try:
-                segment = Segment(self.stream)
+                kwargs["segment"] = count
+                segment = Segment(self.stream, **kwargs)
                 segment.read_segment()
                 segments.append(segment)
 
