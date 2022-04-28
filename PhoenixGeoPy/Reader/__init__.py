@@ -1,8 +1,9 @@
 from .header import Header
 from .data_scaling import DataScaling
 from .base import TSReaderBase
-from .native_reader import NativeReader
-from .decimated_segmented_reader import DecimatedSegmentedReader
+from .native import NativeReader
+from .segmented import DecimatedSegmentedReader
+from .contiguous import DecimatedContinuousReader
 
 __all__ = [
     "Header",
@@ -10,4 +11,5 @@ __all__ = [
     "TSReaderBase",
     "NativeReader",
     "DecimatedSegmentedReader",
+    "DecimatedContinuousReader"
 ]

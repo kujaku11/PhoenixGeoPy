@@ -19,15 +19,57 @@ from PhoenixGeoPy.Reader import TSReaderBase
 
 
 class DecimatedContinuousReader(TSReaderBase):
-    """Class to create a streamer for continuous decimated time series,
-    i.e. *.td_150, *.td_30"""
+    """
+    Class to create a streamer for continuous decimated time series,
+    i.e. *.td_150, *.td_30
+    
+    These files have no sub header information.
+    """
 
     def __init__(self, path, num_files=1, report_hw_sat=False):
         # Init the base class
-        super().__init__(path, num_files, 128, report_hw_sat)
-        self.unpack_header()
-        self.subheader = {}
+        super().__init__(
+            path, num_files=num_files, header_size=128, report_hw_sat=report_hw_sat
+            ) 
 
+        self.unpack_header(self.stream)
+        self.subheader = {}
+    
+    # need a read and read sequence
+    def read(self):
+        """
+        Read in the full data from the file given
+        
+        :return: DESCRIPTION
+        :rtype: TYPE
+
+        """
+        self.stream.seek(self.header_size)
+        return np.fromfile(self.stream, dtype=np.float32)
+    
+    def read_sequence(self, start=0, end=None):
+        """
+        Read a sequence of files
+        
+        :param start: DESCRIPTION, defaults to 0
+        :type start: TYPE, optional
+        :param end: DESCRIPTION, defaults to None
+        :type end: TYPE, optional
+        :return: DESCRIPTION
+        :rtype: TYPE
+
+        """
+        
+        data = np.array([], dtype=np.float32)
+        for fn in self.sequence_list[slice(start, end)]:
+            self._open_file(fn)
+            self.unpack_header(self.stream)
+            ts= self.read()
+            data = np.append(data, ts)
+            
+        return data
+    
+    
     def read_data(self, numSamples):
         ret_array = np.empty([0])
         if self.stream is not None:

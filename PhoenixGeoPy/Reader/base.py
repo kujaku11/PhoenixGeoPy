@@ -28,6 +28,10 @@ class TSReaderBase(Header):
         self.stream = None
         # Open the file passed as the fisrt file in the sequence to stream
         self._open_file(self.base_path)
+        if self._recording_id is None:
+            self.recording_id = self.base_path.stem.split("_")[1]
+        if self._channel_id is None:
+            self.channel_id = self.base_path.stem.split("_")[2]
 
     @property
     def base_path(self):
@@ -52,28 +56,6 @@ class TSReaderBase(Header):
     @property
     def instrument_id(self):
         return self.base_path.stem.split("_")[0]
-
-    @property
-    def recording_id(self):
-        if self._recording_id is None:
-            return self.base_path.stem.split("_")[1]
-        else:
-            return self._recording_id
-
-    @recording_id.setter
-    def recording_id(self, value):
-        self._recording_id = value
-
-    @property
-    def channel_id(self):
-        if self._channel_id is None:
-            return self.base_path.stem.split("_")[2]
-        else:
-            return self._channel_id
-
-    @channel_id.setter
-    def channel_id(self, value):
-        self._channel_id = value
 
     @property
     def seq(self):

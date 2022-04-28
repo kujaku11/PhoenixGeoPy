@@ -27,9 +27,12 @@ class Header:
         self.report_hw_sat = False
         self.header_size = 128
         self.ad_plus_minus_range = 5.0  # differential voltage range that the A/D can measure (Board model dependent)
-
+        self._header = None
         self._recording_id = None
         self._channel_id = None
+        
+        for key, value in kwargs.items():
+            setattr(self, key, value)
 
         self._unpack_dict = {
             "file_type": {"dtype": "B", "index": 0},
@@ -146,6 +149,8 @@ class Header:
 
     @recording_id.setter
     def recording_id(self, value):
+        if isinstance(value, str):
+            value = int(value, 16)
         self._recording_id = value
 
     @property

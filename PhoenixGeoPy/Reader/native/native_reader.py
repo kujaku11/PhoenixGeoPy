@@ -205,19 +205,25 @@ class NativeReader(TSReaderBase):
         raw_data = raw_data.reshape((n_frames, self.frame_size_bytes))
 
         # split the data from the footer
-        ts = raw_data[:, 0:self.npts_per_frame * 3].flatten()
-        footer = raw_data[:, self.npts_per_frame * 3:].flatten()
-        
-        # get the number of raw byte frames 
+        ts = raw_data[:, 0 : self.npts_per_frame * 3].flatten()
+        footer = raw_data[:, self.npts_per_frame * 3 :].flatten()
+
+        # get the number of raw byte frames
         raw_frames = int(ts.size / 12)
 
         # stride over bytes making new 4 bytes for a 32bit integer and scale
-        ts_data = as_strided(
-            ts.view(np.int32),
-            strides=(12, 3),
-            shape=(raw_frames, 4),
-        ).flatten().byteswap() * self.scale_factor # somehow the number is off by just a bit ~1E-7 V
-        
+        ts_data = (
+            as_strided(
+                ts.view(np.int32),
+                strides=(12, 3),
+                shape=(raw_frames, 4),
+            )
+            .flatten()
+            .byteswap()
+            * self.scale_factor
+        )
+        # somehow the number is off by just a bit ~1E-7 V
+
         # view the footer as an int32
         footer = footer.view(np.int32)
 
@@ -237,12 +243,15 @@ class NativeReader(TSReaderBase):
         """
 
         data = np.array([])
+        footer = np.array([])
         for fn in self.sequence_list[slice(start, end)]:
             self._open_file(fn)
             self.unpack_header(self.stream)
-            data = np.append(data, self.read())
+            ts, foot = self.read()
+            data = np.append(data, ts)
+            footer = np.append(footer, foot)
 
-        return data
+        return data, footer
 
     def skip_frames(self, num_frames):
         bytes_to_skip = int(num_frames * 64)
