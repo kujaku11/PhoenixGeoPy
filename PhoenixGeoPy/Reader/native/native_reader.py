@@ -25,7 +25,14 @@ INSTRUMENT_INPUT_VOLTS = 2
 
 
 class NativeReader(TSReaderBase):
-    """Native sampling rate 'Raw' time series reader class"""
+    """
+    Native sampling rate 'Raw' time series reader class, these are the .bin
+    files.  They are formatted with a header of 128 bytes then frames of 64.
+    
+    Each frame is 20 x 3 byte (24-bit) data point then a 4 byte footer.
+    
+    
+    """
 
     def __init__(
         self,
@@ -52,7 +59,8 @@ class NativeReader(TSReaderBase):
         if header_length == 128:
             self.unpack_header(self.stream)
 
-        # Now that we have the channel circuit-based gain (either form init or from the header)
+        # Now that we have the channel circuit-based gain (either form init 
+        # or from the header)
         # We can calculate the voltage range at the input of the board.
         self.input_plusminus_range = self._calculate_input_plusminus_range()
 
@@ -88,10 +96,10 @@ class NativeReader(TSReaderBase):
         .. note:: that seek is not reset so if you iterate this the stream
         reads from the last tell.
 
-        :param num_frames: DESCRIPTION
-        :type num_frames: TYPE
-        :return: DESCRIPTION
-        :rtype: TYPE
+        :param num_frames: Number of frames to read
+        :type num_frames: integer
+        :return: Scaled data from the given number of frames
+        :rtype: np.ndarray(dtype=float) 
 
         """
 
@@ -198,6 +206,17 @@ class NativeReader(TSReaderBase):
         return data, footer
 
     def read(self):
+        """
+        Read the full data file.  
+        
+        .. note:: This uses :class:`numpy.lib.stride_tricks.as_strided` which
+        can be unstable if the bytes are the correct length.  See notes by 
+        numpy.
+        
+        :return: scaled data and footer
+        :rtype: tuple (data, footer)
+
+        """
 
         # should do a memory map otherwise things can go badly with as_strided
         raw_data = np.memmap(self.base_path, ">i1", mode="r")
@@ -235,14 +254,16 @@ class NativeReader(TSReaderBase):
 
     def read_sequence(self, start=0, end=None):
         """
-        Read sequences
+        Read sequence of files into a single array
 
-        :param start: DESCRIPTION, defaults to 0
-        :type start: TYPE, optional
-        :param end: DESCRIPTION, defaults to None
-        :type end: TYPE, optional
-        :return: DESCRIPTION
-        :rtype: TYPE
+        :param start: sequence start, defaults to 0
+        :type start: integer, optional
+        :param end: sequence end, defaults to None
+        :type end: integer, optional
+        :return: scaled data
+        :rtype: np.ndarray(dtype=float32)
+        :return: footer 
+        rtype: np.ndarray(dtype=int32)
 
         """
 
@@ -258,6 +279,15 @@ class NativeReader(TSReaderBase):
         return data, footer
 
     def skip_frames(self, num_frames):
+        """
+        Skip frames of the stream
+        
+        :param num_frames: number of frames to skip
+        :type num_frames: integer
+        :return: end of file
+        :rtype: boolean
+
+        """
         bytes_to_skip = int(num_frames * 64)
         # Python is dumb for seek and tell, it cannot tell us if a seek goes
         # past EOF so instead we need to do inefficient reads to skip bytes

@@ -16,6 +16,11 @@ from PhoenixGeoPy.Reader import Header
 
 
 class TSReaderBase(Header):
+    """
+    
+    Generic reader that all other readers will inherit
+    
+    """
     def __init__(self, path, num_files=1, header_length=128, report_hw_sat=False):
         self._seq = None
         super().__init__(
@@ -24,7 +29,7 @@ class TSReaderBase(Header):
         self.base_path = path
         self.last_seq = self.seq + num_files
         self.stream = None
-        # Open the file passed as the fisrt file in the sequence to stream
+        # Open the file passed as the first file in the sequence to stream
         self._open_file(self.base_path)
         if self._recording_id is None:
             self.recording_id = self.base_path.stem.split("_")[1]

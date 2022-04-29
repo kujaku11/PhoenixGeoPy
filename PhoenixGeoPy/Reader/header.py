@@ -23,6 +23,13 @@ import string
 
 # =============================================================================
 class Header:
+    """
+    
+    The header is 128 bytes with a specific format.  This reads in the 128 
+    bytes and provides properties to read each attribute of the header in 
+    the correct way.
+    
+    """
     def __init__(self, **kwargs):
         self.report_hw_sat = False
         self.header_length = 128
