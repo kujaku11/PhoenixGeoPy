@@ -15,7 +15,11 @@ import numpy as np
 from numpy.lib.stride_tricks import as_strided
 
 from struct import unpack_from, unpack
-from PhoenixGeoPy.Reader import DataScaling, TSReaderBase
+from PhoenixGeoPy.Reader import TSReaderBase
+
+AD_IN_AD_UNITS = 0
+AD_INPUT_VOLTS = 1
+INSTRUMENT_INPUT_VOLTS = 2
 
 # =============================================================================
 
@@ -27,7 +31,7 @@ class NativeReader(TSReaderBase):
         self,
         path,
         num_files=1,
-        scale_to=DataScaling.AD_input_volts,
+        scale_to=AD_INPUT_VOLTS,
         header_length=128,
         last_frame=0,
         ad_plus_minus_range=5.0,
@@ -68,11 +72,11 @@ class NativeReader(TSReaderBase):
         """
         Get the correct data scaling for the AD converter
         """
-        if self.data_scaling == DataScaling.AD_in_ADunits:
+        if self.data_scaling == AD_IN_AD_UNITS:
             return 256
-        elif self.data_scaling == DataScaling.AD_input_volts:
+        elif self.data_scaling == AD_INPUT_VOLTS:
             return self.ad_plus_minus_range / (2 ** 31)
-        elif self.data_scaling == DataScaling.instrument_input_volts:
+        elif self.data_scaling == INSTRUMENT_INPUT_VOLTS:
             return self.input_plusminus_range / (2 ** 31)
         else:
             raise LookupError("Invalid scaling requested")

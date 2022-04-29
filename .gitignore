@@ -8,6 +8,7 @@ __pycache__/
 *.mth5
 *.h5
 *.bak
+*.pyc
 /logs
 
 # C extensions
