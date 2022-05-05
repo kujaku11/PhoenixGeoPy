@@ -13,7 +13,7 @@ __author__ = "Jorge Torres-Solis"
 
 import numpy as np
 
-from PhoenixGeoPy.Reader import TSReaderBase
+from PhoenixGeoPy.readers import TSReaderBase
 
 # =============================================================================
 
@@ -66,7 +66,6 @@ class DecimatedContinuousReader(TSReaderBase):
             self.unpack_header(self.stream)
             ts = self.read()
             data = np.append(data, ts)
-
         return data
 
     def read_data(self, numSamples):

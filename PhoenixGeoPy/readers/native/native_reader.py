@@ -15,7 +15,7 @@ import numpy as np
 from numpy.lib.stride_tricks import as_strided
 
 from struct import unpack_from, unpack
-from PhoenixGeoPy.Reader import TSReaderBase
+from PhoenixGeoPy.readers import TSReaderBase
 
 AD_IN_AD_UNITS = 0
 AD_INPUT_VOLTS = 1
@@ -58,8 +58,7 @@ class NativeReader(TSReaderBase):
 
         if header_length == 128:
             self.unpack_header(self.stream)
-
-        # Now that we have the channel circuit-based gain (either form init 
+        # Now that we have the channel circuit-based gain (either form init
         # or from the header)
         # We can calculate the voltage range at the input of the board.
         self.input_plusminus_range = self._calculate_input_plusminus_range()
@@ -116,7 +115,6 @@ class NativeReader(TSReaderBase):
                 dataFrame = self.stream.read(64)
                 if not dataFrame:
                     return np.empty([0])
-
             dataFooter = unpack_from("I", dataFrame, 60)
 
             # Check that there are no skipped frames
@@ -134,7 +132,6 @@ class NativeReader(TSReaderBase):
                 value = unpack(">i", dataFrame[ptrSamp : ptrSamp + 3] + b"\x00")[0]
                 _data_buf[_idx_buf] = value * self.scale_factor
                 _idx_buf += 1
-
             frames_in_buf += 1
 
             if self.report_hw_sat:
@@ -144,7 +141,6 @@ class NativeReader(TSReaderBase):
                         "Ch [%s] Frame %d has %d saturations"
                         % (self.ch_id, frameCount, satCount)
                     )
-
         return _data_buf
 
     @property
@@ -176,7 +172,6 @@ class NativeReader(TSReaderBase):
         except ValueError:
             self._open_file(self.base_path)
             self.stream.seek(self.header_length)
-
         chunk_frames = int(self._chunk_size / self.frame_size_bytes)
         data_slices = [
             slice(ii * 64, (ii + 1) * 60 + 4 * ii) for ii in range(chunk_frames)
@@ -202,7 +197,6 @@ class NativeReader(TSReaderBase):
                     for jj in range(self.npts_per_frame)
                 ]
                 footer[ii] = unpack("I", byte_string[footer_frame])[0]
-
         return data, footer
 
     def read(self):
@@ -236,11 +230,7 @@ class NativeReader(TSReaderBase):
 
         # stride over bytes making new 4 bytes for a 32bit integer and scale
         ts_data = (
-            as_strided(
-                ts.view(np.int32),
-                strides=(12, 3),
-                shape=(raw_frames, 4),
-            )
+            as_strided(ts.view(np.int32), strides=(12, 3), shape=(raw_frames, 4),)
             .flatten()
             .byteswap()
             * self.scale_factor
@@ -275,7 +265,6 @@ class NativeReader(TSReaderBase):
             ts, foot = self.read()
             data = np.append(data, ts)
             footer = np.append(footer, foot)
-
         return data, footer
 
     def skip_frames(self, num_frames):
@@ -305,7 +294,6 @@ class NativeReader(TSReaderBase):
                     return False
             else:
                 bytes_to_skip -= local_read_size
-
         # If we reached here we managed to skip all the data requested
         # return true
         self.last_frame += num_frames

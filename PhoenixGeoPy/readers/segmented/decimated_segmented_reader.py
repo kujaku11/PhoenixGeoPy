@@ -15,7 +15,7 @@ from datetime import datetime
 import numpy as np
 
 from struct import unpack_from
-from PhoenixGeoPy.Reader import TSReaderBase
+from PhoenixGeoPy.readers import TSReaderBase
 
 # =============================================================================
 class SubHeader:
@@ -29,7 +29,6 @@ class SubHeader:
 
         for key, value in kwargs.items():
             setattr(self, key, value)
-
         self._unpack_dict = {
             "gps_time_stamp": {"dtype": "I", "index": 0},
             "n_samples": {"dtype": "I", "index": 4},
@@ -52,7 +51,6 @@ class SubHeader:
             "value_mean",
         ]:
             lines.append(f"\t{key:<25}: {getattr(self, key)}")
-
         return "\n".join(lines)
 
     def __repr__(self):
@@ -182,7 +180,7 @@ class DecimatedSegmentedReader(TSReaderBase):
             "channel_id": self.channel_id,
             "channel_type": self.channel_type,
             "segment": 0,
-            }
+        }
         segments = []
         count = 1
         while True:
@@ -195,7 +193,6 @@ class DecimatedSegmentedReader(TSReaderBase):
                 count += 1
             except:
                 break
-
         print(f"INFO: Read {count - 1} segments")
 
         return segments
@@ -205,7 +202,6 @@ class DecimatedSegmentedReader(TSReaderBase):
         if not subheaderBytes:
             if self.open_next():
                 subheaderBytes = self.stream.read(32)
-
         if not subheaderBytes or len(subheaderBytes) < 32:
             self.subheader["timestamp"] = 0
             self.subheader["samplesInRecord"] = 0
@@ -239,5 +235,4 @@ class DecimatedSegmentedReader(TSReaderBase):
                     dtype=np.float32,
                     count=self.subheader["samplesInRecord"],
                 )
-
         return ret_array
