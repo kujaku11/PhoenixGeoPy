@@ -207,6 +207,9 @@ class NativeReader(TSReaderBase):
         can be unstable if the bytes are the correct length.  See notes by 
         numpy.
         
+        Got this solution from:
+        https://stackoverflow.com/questions/12080279/how-do-i-create-a-numpy-dtype-that-includes-24-bit-integers?msclkid=3398046ecd6511ec9a37394f28c5aaba
+        
         :return: scaled data and footer
         :rtype: tuple (data, footer)
 
@@ -215,7 +218,15 @@ class NativeReader(TSReaderBase):
         # should do a memory map otherwise things can go badly with as_strided
         raw_data = np.memmap(self.base_path, ">i1", mode="r")
         raw_data = raw_data[self.header_length :]
-        # for now this will round, will need to take into account add bytes
+
+        # trim of any extra bytes
+        extra_bytes = raw_data.size % 12
+        if extra_bytes != 0:
+            print(f"WARNING: found {extra_bytes} extra bits in file.")
+        useable_bytes = raw_data.size - extra_bytes
+        raw_data = raw_data[:useable_bytes]
+        # This should now be the exact number of frames after trimming off
+        # extra bytes.
         n_frames = int(raw_data.size / self.frame_size_bytes)
 
         # reshape to (nframes, 64)
