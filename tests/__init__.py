@@ -15,3 +15,8 @@ SEGMENTED_0 = DATA_PATH_SEGMENTED.joinpath("0")
 SEGMENTED_1 = DATA_PATH_SEGMENTED.joinpath("1")
 SEGMENTED_2 = DATA_PATH_SEGMENTED.joinpath("2")
 SEGMENTED_4 = DATA_PATH_SEGMENTED.joinpath("4")
+
+NATIVE_SEQUENCE_0 = list(NATIVE_0.glob("*.bin"))
+NATIVE_SEQUENCE_1 = list(NATIVE_1.glob("*.bin"))
+NATIVE_SEQUENCE_2 = list(NATIVE_2.glob("*.bin"))
+NATIVE_SEQUENCE_4 = list(NATIVE_4.glob("*.bin"))

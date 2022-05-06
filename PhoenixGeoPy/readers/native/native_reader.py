@@ -147,64 +147,12 @@ class NativeReader(TSReaderBase):
     def npts_per_frame(self):
         return int((self.frame_size_bytes - 4) / 3)
 
-    def _get_number_of_frames(self):
-        return int((self.file_size - self.header_length) / self.frame_size_bytes)
-
-    def _get_number_of_chunks(self):
-        # will need to take into account residual if the chunk size is not
-        # a good choice.
-        return int((self.file_size - self.header_length) / self._chunk_size)
-
-    def _get_number_of_frames_per_chunk(self):
-        return int((self._chunk_size / self.frame_size_bytes) * self.npts_per_frame)
-
-    def read_slow(self):
-
-        # first read in whole file, probably should do this in chunks
-
-        n_frames = self._get_number_of_frames()
-        data = np.zeros(n_frames * self.npts_per_frame, dtype=np.int32)
-        footer = np.zeros(n_frames)
-
-        # start from the end of the header
-        try:
-            self.stream.seek(self.header_length)
-        except ValueError:
-            self._open_file(self.base_path)
-            self.stream.seek(self.header_length)
-        chunk_frames = int(self._chunk_size / self.frame_size_bytes)
-        data_slices = [
-            slice(ii * 64, (ii + 1) * 60 + 4 * ii) for ii in range(chunk_frames)
-        ]
-        footer_slices = [
-            slice((ii) * 60, (ii) * 60 + 4) for ii in range(1, chunk_frames + 1)
-        ]
-        for count in range(self._get_number_of_chunks()):
-            byte_string = self.stream.read(self._chunk_size)
-
-            for data_frame, footer_frame, ii in zip(
-                data_slices, footer_slices, range(n_frames)
-            ):
-                # need to make this part more efficient, should use numpy
-                # for this, should be faster and wouldn't have to loop
-                index_0 = (count * chunk_frames + ii) * self.npts_per_frame
-                index_1 = (count * chunk_frames + ii + 1) * self.npts_per_frame
-                data[index_0:index_1] = [
-                    unpack(
-                        ">i",
-                        byte_string[data_frame][slice(jj * 3, (jj + 1) * 3)] + b"\x00",
-                    )[0]
-                    for jj in range(self.npts_per_frame)
-                ]
-                footer[ii] = unpack("I", byte_string[footer_frame])[0]
-        return data, footer
-
     def read(self):
         """
         Read the full data file.  
         
         .. note:: This uses :class:`numpy.lib.stride_tricks.as_strided` which
-        can be unstable if the bytes are the correct length.  See notes by 
+        can be unstable if the bytes are not the correct length.  See notes by 
         numpy.
         
         Got this solution from:

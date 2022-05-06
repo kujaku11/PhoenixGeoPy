@@ -39,54 +39,130 @@ class TSReaderBase(Header):
 
     @property
     def base_path(self):
+        """
+        
+        :return: full path of file
+        :rtype: :class:`pathlib.Path`
+
+        """
         return self._base_path
 
     @base_path.setter
     def base_path(self, value):
+        """
+        
+        :param value: full path to file
+        :type value: string or :class:`pathlib.Path`
+
+        """
+
         self._base_path = Path(value)
 
     @property
     def base_dir(self):
+        """
+        
+        :return: parent directory of file
+        :rtype: :class:`pathlib.Path`
+
+        """
         return self.base_path.parent
 
     @property
     def file_name(self):
+        """
+        
+        :return: name of the file
+        :rtype: string
+
+        """
         return self.base_path.name
 
     @property
     def file_extension(self):
+        """
+        
+        :return: file extension
+        :rtype: string
+
+        """
         return self.base_path.suffix
 
     @property
     def instrument_id(self):
+        """
+        
+        :return: instrument ID
+        :rtype: string
+
+        """
         return self.base_path.stem.split("_")[0]
 
     @property
     def seq(self):
+        """
+        
+        :return: sequence number of the file
+        :rtype: int
+
+        """
         if self._seq is None:
             return int(self.base_path.stem.split("_")[3], 16)
         return self._seq
 
     @seq.setter
     def seq(self, value):
+        """
+        
+        :param value: sequence number
+        :type value: integer
+
+
+        """
         self._seq = int(value)
 
     @property
     def file_size(self):
+        """
+        
+        :return: file size in bytes
+        :rtype: integer
+
+        """
         return self.base_path.stat().st_size
 
     @property
     def max_samples(self):
-        return int((self.file_size - self.header_length * 3) / 3)
+        """
+        Max number of samples in a file which is:
+            
+        (total number of bytes - header length) / frame size * n samples per frame
+        
+        :return: max number of samples in a file
+        :rtype: int
+
+        """
+        return int((self.file_size - self.header_length) / 64 * 20)
 
     @property
     def sequence_list(self):
         """
-        get all the files in the sequence
+        get all the files in the sequence sorted by sequence number
         """
         return sorted(list(self.base_dir.glob(f"*{self.file_extension}")))
 
     def _open_file(self, filename):
+        """
+        open a given file in 'rb' mode
+        
+        :param filename: full path to file
+        :type filename: :class:`pathlib.Path`
+        :return: boolean if the file is now open [True] or not [False]
+        :rtype: boolean
+
+        """
+        filename = Path(filename)
+
         if filename.exists():
             print(f"INFO: Opening {filename}")
             self.stream = open(filename, "rb")
@@ -94,6 +170,12 @@ class TSReaderBase(Header):
         return False
 
     def open_next(self):
+        """
+        Open the next file in the sequence
+        :return: [True] if next file is now open, [False] if it is not
+        :rtype: boolean
+
+        """
         if self.stream is not None:
             self.stream.close()
         self.seq += 1
@@ -104,6 +186,14 @@ class TSReaderBase(Header):
         return False
 
     def open_file_seq(self, file_seq_num=None):
+        """
+        Open a file in the sequence given the sequence number
+        :param file_seq_num: sequence number to open, defaults to None
+        :type file_seq_num: integer, optional
+        :return: [True] if next file is now open, [False] if it is not
+        :rtype: boolean
+
+        """
         if self.stream is not None:
             self.stream.close()
         if file_seq_num is not None:
@@ -112,5 +202,9 @@ class TSReaderBase(Header):
         return self._open_file(new_path)
 
     def close(self):
+        """
+        Close the file
+
+        """
         if self.stream is not None:
             self.stream.close()
