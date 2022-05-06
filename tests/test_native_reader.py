@@ -11,7 +11,7 @@ Created on Thu May  5 16:11:44 2022
 import unittest
 import numpy as np
 
-from __init__ import NATIVE_0, NATIVE_1, NATIVE_2, NATIVE_4
+from . import NATIVE_0, NATIVE_1, NATIVE_2, NATIVE_4
 from PhoenixGeoPy.readers import NativeReader
 
 # =============================================================================

@@ -44,7 +44,7 @@ class DecimatedContinuousReader(TSReaderBase):
         :rtype: TYPE
 
         """
-        self.stream.seek(self.header_size)
+        self.stream.seek(self.header_length)
         return np.fromfile(self.stream, dtype=np.float32)
 
     def read_sequence(self, start=0, end=None):
